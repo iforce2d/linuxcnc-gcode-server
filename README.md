@@ -11,29 +11,31 @@ The motivation was to allow easier control by OpenPNP, to this end some specific
 All other g-code commands will be passed through to LinuxCNC unchanged, and are relayed to LinuxCNC as MDI commands.
 
 <br>
+
 ## Interpreted commands
 
 #### M115
 Returns a string like:
 
-ok FIRMWARE_NAME:linuxcnc-gcode, FIRMWARE_VERSION:0.1
+`ok FIRMWARE_NAME:linuxcnc-gcode, FIRMWARE_VERSION:0.1`
 
 
 #### M114
 Returns the current position of the machine, eg.
 
-ok X:1.200000 Y:3.400000 Z:5.600000 A:7.800000
+`ok X:1.200000 Y:3.400000 Z:5.600000 A:7.800000`
 
 #### M105
 Returns the values of the first four analog inputs (motion.analog-in-00 etc)
 
-ok T0:0.147000 T1:0.7890000 T2:0.000000 T3:0.000000
+`ok T0:0.147000 T1:0.7890000 T2:0.000000 T3:0.000000`
 
 #### M400
 
 This command will cause all further commands to be deferred until the machine is idle.
 
 <br>
+
 ## Building
 
 Requires the LinuxCNC headers and libs available on your system. On my system I built LinuxCNC from source which produced the package "linuxcnc-uspace-dev", which I then installed. Not sure how you would get this by other methods...
@@ -43,6 +45,7 @@ With the requirements in place, you should be able to just run `make` to build.
 This server uses NML to interface with LinuxCNC. It expects to find a NML definition file at /usr/share/linuxcnc/linuxcnc.nml which is probably where it will be unless you have really been messing around with things.
 
 <br>
+
 ## Basic usage
 
 First startup LinuxCNC, then run this server. By default it will listen on port 5007, you can change this with the -p option, eg.
@@ -64,6 +67,7 @@ If the machine is enabled, you should be able to move it around with g-code comm
 ![alt text](https://www.iforce2d.net/tmp/openpnp/Selection_1180.png)
 
 <br>
+
 ## Usage with OpenPNP
 
 Set up a GCodeDriver like this:
@@ -81,6 +85,7 @@ If the gcode server is stopped and restarted, OpenPNP will lose communication wi
 Note that OpenPNP does not read the current position of the machine when connecting, so if the machine was moved by commands outside OpenPNP, they will not be in sync until OpenPNP issues the next move command.
 
 <br>
+
 Some commonly used settings are listed below (see OpenPNP's [GcodeDriver Command Reference](https://github.com/openpnp/openpnp/wiki/GcodeDriver_Command-Reference) for more details).
 
 
@@ -91,6 +96,7 @@ The standard rule as suggested by OpenPNP is fine:
     ^ok.*
 
 <br>
+
 ### POSITION_REPORT_REGEX
 
 The standard rule as suggested by OpenPNP is fine:
@@ -98,6 +104,7 @@ The standard rule as suggested by OpenPNP is fine:
     ^ok X:(?<x>-?\d+\.\d+) Y:(?<y>-?\d+\.\d+) Z:(?<z>-?\d+\.\d+) A:(?<rotation>-?\d+\.\d+)
 
 <br>
+
 ### COMMAND_ERROR_REGEX
 
 The standard rule as suggested by OpenPNP is fine:
@@ -105,6 +112,7 @@ The standard rule as suggested by OpenPNP is fine:
     ^error:.*
 
 <br>
+
 ### ACTUATE_BOOLEAN_COMMAND
 
 You can use LinuxCNC's standard M64 and M65 to switch digital outputs on and off. The value P0, P1 etc maps to motion.digital-out-00, motion.digital-out-01 etc. There are various formats that will work for defining this in OpenPNP, I have found this style works ok:
@@ -112,6 +120,7 @@ You can use LinuxCNC's standard M64 and M65 to switch digital outputs on and off
     M{True:64}{False:65} P0
 
 <br>
+
 ### MOVE_TO_COMMAND
 
 OpenPNP will probably suggest something like this which will work fine:
@@ -119,6 +128,7 @@ OpenPNP will probably suggest something like this which will work fine:
     G1 {X:X%.3f} {Y:Y%.3f} {Z:Z%.3f} {A:A%.4f} {FeedRate:F%.0f}
 
 <br>
+
 ### MOVE_TO_COMPLETE_COMMAND
 
 This should be set to M400:
@@ -126,6 +136,7 @@ This should be set to M400:
     M400
 
 <br>
+
 ### ACTUATOR_READ_COMMAND
 I have not tested this, but I think it would be just:
 
@@ -134,6 +145,7 @@ I have not tested this, but I think it would be just:
 This will always return four values, for motion.analog-in-00, motion.analog-in-01 etc.
 
 <br>
+
 ### ACTUATOR_READ_REGEX
 I have not tested this, but I think it would be like:
 
@@ -144,6 +156,7 @@ That would be ok if you wanted to read motion.analog-in-00. But because M105 alw
     ^ok.* T2:(?<Value>-?\d+\.\d+)
 
 <br>
+
 ## Setting acceleration
 
 To have OpenPNP specify acceleration for moves, the `Motion Control Type` option in the `Driver Settings` tab must be set to a type that controls acceleration, eg. EuclideanAxisLimits, ConstantAcceleration. Then in the MOVE_TO_COMMAND definition you can prepend a rule to output an acceleration setting, for example:
