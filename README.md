@@ -14,15 +14,15 @@ All other g-code commands will be passed through unchanged, and are relayed to L
 ## Non-standard commands
 
 #### M115
-Returns a string like:
+Returns a string like:  
 `ok FIRMWARE_NAME:linuxcnc-gcode, FIRMWARE_VERSION:0.1`
 
 #### M114
-Returns the current position of the machine, eg.
+Returns the current position of the machine, eg.  
 `ok X:1.200000 Y:3.400000 Z:5.600000 A:7.800000`
 
 #### M105
-Returns the values of the first four analog inputs (motion.analog-in-00 etc)
+Returns the values of the first four analog inputs (motion.analog-in-00 etc)  
 `ok T0:0.147000 T1:0.7890000 T2:0.000000 T3:0.000000`
 
 #### M400
