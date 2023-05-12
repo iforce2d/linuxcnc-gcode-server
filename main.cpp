@@ -17,6 +17,7 @@
 #include <getopt.h>
 #include <iostream>
 #include <cstdlib>
+#include <errno.h>
 
 #include "linuxcnc/emc.hh"
 #include "linuxcnc/emc_nml.hh"

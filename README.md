@@ -17,7 +17,6 @@ All other g-code commands will be passed through unchanged, and are relayed to L
 Returns a string like:
 `ok FIRMWARE_NAME:linuxcnc-gcode, FIRMWARE_VERSION:0.1`
 
-
 #### M114
 Returns the current position of the machine, eg.
 `ok X:1.200000 Y:3.400000 Z:5.600000 A:7.800000`
