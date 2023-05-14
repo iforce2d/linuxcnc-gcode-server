@@ -229,10 +229,10 @@ When using the OpenPNP user interface to jog the machine, the MOVE_TO_COMPLETE_C
 
     ./linuxcnc-gcode-server -t 750
 
-<b>Note:</b> even when using subroutines to process commands as a group, there are still other factors that can interrupt blending, like the M64/M65
+<b>Note:</b> even when using batches to process commands as a group, there are still other factors that can interrupt blending, like the M64/M65
 commands or setting the acceleration via bash script as mentioned above.
 
-<b>Note:</b> the commands within a `beginsub`/`endsub` block are given to LinuxCNC without any special handling, so you cannot use the 'non-standard' commands (M115, M114, M105, M400). These will be ignored inside a batch.
+<b>Note:</b> the commands within a `beginsub`/`endsub` block are passed to LinuxCNC without any special handling, so you cannot use the 'non-standard' commands (M115, M114, M105, M400). These will be ignored inside a batch.
 
 <br>
 
