@@ -36,6 +36,11 @@ extern char error_string[NML_ERROR_LEN];
 extern char operator_text_string[NML_TEXT_LEN];
 extern char operator_display_string[NML_DISPLAY_LEN];
 
+extern char emc_inifile[LINELEN];
+extern char emc_nmlfile[LINELEN];
+extern char emc_macrosPath[LINELEN];
+
+int iniLoad(const char *filename);
 int emcTaskNmlGet();
 int emcErrorNmlGet();
 int tryNml(double retry_time, double retry_interval);

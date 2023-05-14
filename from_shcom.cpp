@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "inifile.hh"
 #include "from_shcom.h"
 
 static int num_joints = EMCMOT_MAX_JOINTS;
@@ -34,7 +35,94 @@ int emcCommandSerialNumber;
 
 int programStartLine = 0;
 
-const char *nmlfile = "/usr/share/linuxcnc/linuxcnc.nml";
+//const char *nmlfile = "/usr/share/linuxcnc/linuxcnc.nml";
+
+char emc_macrosPath[LINELEN];
+
+int iniLoad(const char *filename)
+{
+    strncpy(emc_macrosPath, ".", LINELEN);
+
+    IniFile inifile;
+    const char *tmpstring;
+    //char displayString[LINELEN] = "";
+    //int t;
+    //int i;
+
+    // open it
+    if (inifile.Open(filename) == false) {
+        return -1;
+    }
+
+//    if (NULL != (inistring = inifile.Find("DEBUG", "EMC"))) {
+//        // copy to global
+//        if (1 != sscanf(inistring, "%i", &emc_debug)) {
+//            emc_debug = 0;
+//        }
+//    } else {
+//        // not found, use default
+//        emc_debug = 0;
+//    }
+
+    if (NULL != (tmpstring = inifile.Find("NML_FILE", "EMC"))) {
+        // copy to global
+        strncpy(emc_nmlfile, tmpstring, LINELEN);
+    } else {
+        // not found, use default
+    }
+
+    if (NULL != (tmpstring = inifile.Find("SUBROUTINE_PATH", "RS274NGC"))) {
+        // copy to global
+        strncpy(emc_macrosPath, tmpstring, LINELEN);
+    } else {
+        // not found, use default
+    }
+
+
+//    for (t = 0; t < EMCMOT_MAX_JOINTS; t++) {
+//        jogPol[t] = 1;		// set to default
+//        snprintf(displayString, sizeof(displayString), "JOINT_%d", t);
+//        if (NULL != (inistring =
+//                     inifile.Find("JOGGING_POLARITY", displayString)) &&
+//            1 == sscanf(inistring, "%d", &i) && i == 0) {
+//            // it read as 0, so override default
+//            jogPol[t] = 0;
+//        }
+//    }
+
+//    if (NULL != (inistring = inifile.Find("LINEAR_UNITS", "DISPLAY"))) {
+//        if (!strcmp(inistring, "AUTO")) {
+//            linearUnitConversion = LINEAR_UNITS_AUTO;
+//        } else if (!strcmp(inistring, "INCH")) {
+//            linearUnitConversion = LINEAR_UNITS_INCH;
+//        } else if (!strcmp(inistring, "MM")) {
+//            linearUnitConversion = LINEAR_UNITS_MM;
+//        } else if (!strcmp(inistring, "CM")) {
+//            linearUnitConversion = LINEAR_UNITS_CM;
+//        }
+//    } else {
+//        // not found, leave default alone
+//    }
+
+//    if (NULL != (inistring = inifile.Find("ANGULAR_UNITS", "DISPLAY"))) {
+//        if (!strcmp(inistring, "AUTO")) {
+//            angularUnitConversion = ANGULAR_UNITS_AUTO;
+//        } else if (!strcmp(inistring, "DEG")) {
+//            angularUnitConversion = ANGULAR_UNITS_DEG;
+//        } else if (!strcmp(inistring, "RAD")) {
+//            angularUnitConversion = ANGULAR_UNITS_RAD;
+//        } else if (!strcmp(inistring, "GRAD")) {
+//            angularUnitConversion = ANGULAR_UNITS_GRAD;
+//        }
+//    } else {
+//        // not found, leave default alone
+//    }
+
+    // close it
+    inifile.Close();
+
+    return 0;
+}
 
 int emcTaskNmlGet()
 {
@@ -43,8 +131,7 @@ int emcTaskNmlGet()
     // try to connect to EMC cmd
     if (emcCommandBuffer == 0) {
         emcCommandBuffer =
-            new RCS_CMD_CHANNEL(emcFormat, "emcCommand", "xemc",
-                                nmlfile);
+            new RCS_CMD_CHANNEL(emcFormat, "emcCommand", "xemc", emc_nmlfile);
         if (!emcCommandBuffer->valid()) {
             delete emcCommandBuffer;
             emcCommandBuffer = 0;
@@ -54,8 +141,7 @@ int emcTaskNmlGet()
     // try to connect to EMC status
     if (emcStatusBuffer == 0) {
         emcStatusBuffer =
-            new RCS_STAT_CHANNEL(emcFormat, "emcStatus", "xemc",
-                                 nmlfile);
+            new RCS_STAT_CHANNEL(emcFormat, "emcStatus", "xemc", emc_nmlfile);
         if (!emcStatusBuffer->valid()
             || EMC_STAT_TYPE != emcStatusBuffer->peek()) {
             delete emcStatusBuffer;
@@ -76,7 +162,7 @@ int emcErrorNmlGet()
 
     if (emcErrorBuffer == 0) {
         emcErrorBuffer =
-            new NML(nmlErrorFormat, "emcError", "xemc", nmlfile);
+            new NML(nmlErrorFormat, "emcError", "xemc", emc_nmlfile);
         if (!emcErrorBuffer->valid()) {
             delete emcErrorBuffer;
             emcErrorBuffer = 0;

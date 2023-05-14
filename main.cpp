@@ -18,6 +18,10 @@
 #include <iostream>
 #include <cstdlib>
 #include <errno.h>
+#include <chrono>
+
+#include <string>
+#include <vector>
 
 #include "linuxcnc/emc.hh"
 #include "linuxcnc/emc_nml.hh"
@@ -47,6 +51,10 @@ typedef struct {
 
 int port = 5007;
 int enableMachineOnStartup = 0;
+int autosendBatchTimeout = 250; // ms
+
+//extern char emc_inifile[LINELEN];
+
 int server_sockfd;
 socklen_t server_len, client_len;
 struct sockaddr_in server_address;
@@ -65,6 +73,8 @@ struct option longopts[] = {
   {"help", 0, NULL, 'h'},
   {"port", 1, NULL, 'p'},
   {"enable", 0, NULL, 'e'},
+  {"inifile", 1, NULL, 'i'},
+  {"timeout", 1, NULL, 't'},
 //  {"name", 1, NULL, 'n'},
 //  {"sessions", 1, NULL, 's'},
 //  {"connectpw", 1, NULL, 'w'},
@@ -235,12 +245,14 @@ typedef enum {
     cmdFirmwareInfo,
     cmdGetAPinState,
     cmdFinishMoves,
+    cmdBeginBatch,
+    cmdEndBatch,
     //cmdSetDPinState,
     //cmdSetAcceleration,
     cmdUnknown
 } commandTokenType;
 
-const char *commands[] = {"STATUS", "ABORT", "OPEN", "RUN", "PAUSE", "RESUME", "M114", "M115", "M105", "M400", /*"M42", "M171",*/ ""};
+const char *commands[] = {"STATUS", "ABORT", "OPEN", "RUN", "PAUSE", "RESUME", "M114", "M115", "M105", "M400", "BEGINSUB", "ENDSUB", /*"M42", "M171",*/ ""};
 
 int lookupToken(char *s)
 {
@@ -311,8 +323,8 @@ void replyFinishMoves( connectionRecType* context ) {
     int count = 0;
     while ( ! doneStatus ) {
         count++;
-        if ( count % 10000 == 0 ) {
-            printf("waiting... "); fflush(stdout);
+        if ( count % 5000 == 0 ) {
+            printf("still waiting... "); fflush(stdout);
         }
         esleep(0.001);
         doneStatus = emcCommandPollDone();
@@ -328,7 +340,8 @@ void replyFinishMoves( connectionRecType* context ) {
     replyOk(context);
 }
 
-void doMDI(connectionRecType* context, char* inStr, bool wait = false) {
+// context can be NULL for this one if a batch is being auto-cleared
+void doMDI(connectionRecType* context, const char* inStr, bool wait = false) {
 
     printf( "Doing MDI command: %s\n", inStr );
 
@@ -350,7 +363,8 @@ void doMDI(connectionRecType* context, char* inStr, bool wait = false) {
     if ( emcStatus->task.mode != EMC_TASK_MODE_MDI ) {
         const char* noMdi = "error: could not enter MDI mode\n";
         printf(noMdi);
-        write(context->cliSock, noMdi, strlen(noMdi));
+        if ( context )
+            write(context->cliSock, noMdi, strlen(noMdi));
         return;
     }
 
@@ -359,14 +373,17 @@ void doMDI(connectionRecType* context, char* inStr, bool wait = false) {
     printf("sendMdiCmd... "); fflush(stdout);
     ok = sendMdiCmd( inStr ) == 0;
     printf("%s\n", ok ? "ok":"ng");
-    if ( !ok ) {
-        showError(context);
-    }
-    else {
-        if ( wait )
-            replyFinishMoves(context);
-        else
-            replyOk(context);
+
+    if ( context ) {
+        if ( ! ok ) {
+            showError(context);
+        }
+        else {
+            if ( wait )
+                replyFinishMoves(context);
+            else
+                replyOk(context);
+        }
     }
 }
 
@@ -463,7 +480,80 @@ void doResume(connectionRecType* context) {
         replyOk(context);
 }
 
-// handle the rsh command in context->inBuf
+bool insideBatch = false;
+std::vector<std::string> batchEntries;
+pthread_mutex_t batchEntriesLock;
+std::chrono::steady_clock::time_point lastBatchCommandTime = {};
+
+void beginBatch(connectionRecType* context) {
+
+    printf( "Beginning batch\n" );
+
+    pthread_mutex_lock(&batchEntriesLock);
+    insideBatch = true;
+    pthread_mutex_unlock(&batchEntriesLock);
+
+    replyOk(context);
+
+}
+
+void queueBatchEntry(connectionRecType* context, char* inStr) {
+    printf( "Adding to batch: %s\n", inStr );
+
+    pthread_mutex_lock(&batchEntriesLock);
+    batchEntries.push_back( std::string(inStr) );
+    lastBatchCommandTime = std::chrono::steady_clock::now();
+    pthread_mutex_unlock(&batchEntriesLock);
+
+    replyOk(context);
+}
+
+void endBatch(connectionRecType* context) {
+
+    pthread_mutex_lock(&batchEntriesLock);
+
+    printf( "Sending batch\n" );
+    std::vector<std::string>::iterator it = batchEntries.begin();
+    while (it != batchEntries.end()) {
+        std::string s = *it;
+        printf( "   %s\n", s.c_str() );
+        ++it;
+    }
+
+    std::string subRoutineFile = std::string(emc_macrosPath) + "/tmp.ngc";
+    FILE* f = fopen(subRoutineFile.c_str(), "w");
+    if ( !f ) {
+        printf( "*** Could not open file %s\n", subRoutineFile.c_str() );
+        batchEntries.clear();
+        insideBatch = false;
+        sprintf(error_string, "batch send failed, could not open tmp file");
+        showError();
+        return;
+    }
+
+    fprintf(f, "o<tmp> sub\n");
+
+    it = batchEntries.begin();
+    while (it != batchEntries.end()) {
+        std::string s = *it;
+        fprintf(f, "%s\n", s.c_str());
+        ++it;
+    }
+
+    fprintf(f, "o<tmp> endsub\n");
+
+    fclose(f);
+
+    batchEntries.clear();
+    insideBatch = false;
+
+    pthread_mutex_unlock(&batchEntriesLock);
+
+    doMDI(context, "o<tmp> call");
+    //replyOk(context);
+
+}
+
 int parseCommand(connectionRecType *context)
 {
     int ret = 0;
@@ -476,17 +566,48 @@ int parseCommand(connectionRecType *context)
     strncpy(originalInBuf, context->inBuf, INBUF_LEN-1);
 
     char* pch = strtok(context->inBuf, delims);
+
+    if ( insideBatch ) {
+        switch (lookupToken(pch)) {
+            case cmdStatus:
+            case cmdBeginBatch:
+            case cmdFirmwareInfo:
+            case cmdPosition:
+            case cmdGetAPinState:
+            case cmdFinishMoves:
+            case cmdAbort:
+            case cmdOpenProgram:
+            case cmdRunProgram:
+            case cmdPause:
+            case cmdResume:
+                // ignore
+                printf("(ignored inside batch)\n");
+                break;
+            case cmdEndBatch:
+                endBatch(context);
+                break;
+            default:
+                queueBatchEntry(context, originalInBuf);
+        }
+
+        return ret;
+    }
+
     if (pch != NULL) {
 
         switch (lookupToken(pch)) {
+            case cmdBeginBatch:
+                beginBatch(context);
+                break;
+
             case cmdStatus:
                 replyStatus(context);
                 break;
-            case cmdPosition:
-                replyPosition(context);
-                break;
             case cmdFirmwareInfo:
                 replyFirmwareInfo(context);
+                break;
+            case cmdPosition:
+                replyPosition(context);
                 break;
 //            case cmdSetDPinState:
 //                setDPinState(context, originalInBuf);
@@ -517,7 +638,7 @@ int parseCommand(connectionRecType *context)
         }
     }
 
-  return ret;
+    return ret;
 }  
 
 void *readClient(void *arg)
@@ -535,17 +656,17 @@ void *readClient(void *arg)
     // partial line in context->inBuf[0..context_index].
     len = read(context->cliSock, buf, sizeof(buf));
     if (len < 0) {
-      fprintf(stderr, "rsh: error reading from client: %s\n", strerror(errno));
+      fprintf(stderr, "Error reading from client: %s\n", strerror(errno));
       goto finished;
     }
     if (len == 0) {
-      printf("rsh: eof from client\n");
+      printf("EOF from client\n");
       goto finished;
     }
 
     if (context->echo && context->linked)
       if(write(context->cliSock, buf, len) != (ssize_t)len) {
-        fprintf(stderr, "rsh: write() failed: %s", strerror(errno));
+        fprintf(stderr, "write() failed: %s", strerror(errno));
       }
 
     for (i = 0; i < len; i ++) {
@@ -574,11 +695,40 @@ void *readClient(void *arg)
   }
 
 finished:
-  printf("rsh: disconnecting client %s (%s)\n", context->hostName, context->version);
+  printf("Disconnecting client %s (%s)\n", context->hostName, context->version);
   close(context->cliSock);
   free(context);
   pthread_exit((void *)0);
   sessions--;  // FIXME: not reached
+}
+
+void *checkTimeout(void *arg)
+{
+    int ms = 250;
+    int sleepTime = ms * 1000;
+
+    //printf("Starting timeout thread\n");
+    while (1) {
+        usleep( sleepTime );
+        //printf("Checking timeout...\n");
+
+        std::chrono::steady_clock::time_point current_time = std::chrono::steady_clock::now();
+        std::chrono::milliseconds elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - lastBatchCommandTime);
+        long long elapsed_ms_count = elapsed_ms.count();
+
+        if (elapsed_ms_count > autosendBatchTimeout)
+        {
+            pthread_mutex_lock(&batchEntriesLock);
+            if ( insideBatch && !batchEntries.empty() ) {
+                printf("****** auto-clearing batch \n");
+                pthread_mutex_unlock(&batchEntriesLock);
+                endBatch(NULL);
+            }
+            else
+                pthread_mutex_unlock(&batchEntriesLock);
+        }
+    }
+    pthread_exit((void *)0);
 }
 
 int sockMain()
@@ -589,9 +739,9 @@ int sockMain()
       int client_sockfd;
 
       client_len = sizeof(client_address);
-      client_sockfd = accept(server_sockfd,
-        (struct sockaddr *)&client_address, &client_len);
-      if (client_sockfd < 0) exit(0);
+      client_sockfd = accept(server_sockfd, (struct sockaddr *)&client_address, &client_len);
+      if (client_sockfd < 0)
+          exit(0);
       sessions++;
       if ((maxSessions == -1) || (sessions <= maxSessions)) {
         pthread_t *thrd;
@@ -599,13 +749,13 @@ int sockMain()
 
         thrd = (pthread_t *)calloc(1, sizeof(pthread_t));
         if (thrd == NULL) {
-          fprintf(stderr, "rsh: out of memory\n");
+          fprintf(stderr, "Out of memory\n");
           exit(1);
         }
 
         context = (connectionRecType *) malloc(sizeof(connectionRecType));
         if (context == NULL) {
-          fprintf(stderr, "rsh: out of memory\n");
+          fprintf(stderr, "Out of memory\n");
           exit(1);
         }
 
@@ -620,6 +770,9 @@ int sockMain()
         context->commProt = 0;
         context->inBuf[0] = 0;
 
+        batchEntries.clear();
+        insideBatch = false;
+
         printf("Connection received\n");
 
         res = pthread_create(thrd, NULL, readClient, (void *)context);
@@ -629,14 +782,28 @@ int sockMain()
       if (res != 0) {
         close(client_sockfd);
         sessions--;
-        }
-     }
+      }
+    }
     return 0;
+}
+
+void startTimeoutThread() {
+
+    pthread_t *thrd = (pthread_t *)calloc(1, sizeof(pthread_t));
+    if (thrd == NULL) {
+        fprintf(stderr, "Out of memory\n");
+        exit(1);
+    }
+
+    int res = pthread_create(thrd, NULL, checkTimeout, (void *)NULL);
+    if ( res != 0 ) {
+        printf("Could not start timeout thread\n");
+    }
 }
 
 void initMain()
 {
-    emcWaitType = EMC_WAIT_DONE;
+    emcWaitType = EMC_WAIT_RECEIVED;
     emcCommandSerialNumber = 0;
     emcUpdateType = EMC_UPDATE_AUTO;
     emcCommandBuffer = 0;
@@ -706,9 +873,11 @@ void usage(char* pname) {
            "Options:\n"
            "         --help     this help\n"
            "         --port     <port number>  (default=%d)\n"
-           "         --enable   <0|1>  (default=%d) enable and home machine on startup\n"
-          ,pname,port,enableMachineOnStartup
-          );
+           "         --enable   enable and home machine on startup\n"
+           "         --timeout  <milliseconds>  (default=%d) auto-send batch if no endsub given within this duration after last command\n"
+           "          -inifile  <inifile>  (default=%s)\n"
+          , pname, port, autosendBatchTimeout, emc_inifile
+    );
 }
 
 int main(int argc, char *argv[])
@@ -717,16 +886,18 @@ int main(int argc, char *argv[])
 
     initMain();
     // process local command line args
-    while((opt = getopt_long(argc, argv, "hen:p:s:w:d:", longopts, NULL)) != - 1) {
+    while((opt = getopt_long(argc, argv, "hp:ei:t:", longopts, NULL)) != - 1) {
       switch(opt) {
         case 'h': usage(argv[0]); exit(1);
 //        case 'e': strncpy(enablePWD, optarg, strlen(optarg) + 1); break;
 //        case 'n': strncpy(serverName, optarg, strlen(optarg) + 1); break;
         case 'p': sscanf(optarg, "%d", &port); break;
+          case 't': sscanf(optarg, "%d", &autosendBatchTimeout); break;
           case 'e': enableMachineOnStartup = 1; break;
 //        case 's': sscanf(optarg, "%d", &maxSessions); break;
 //        case 'w': strncpy(pwd, optarg, strlen(optarg) + 1); break;
 //        case 'd': strncpy(defaultPath, optarg, strlen(optarg) + 1);
+        case 'i': strncpy(emc_inifile, optarg, strlen(optarg) + 1);
         }
       }
 
@@ -742,7 +913,17 @@ int main(int argc, char *argv[])
 //    }
 
     // get configuration information
-    //iniLoad(emc_inifile);
+    iniLoad(emc_inifile);
+
+    printf("Using ini file        : %s\n", emc_inifile);
+    printf("Using nml file        : %s\n", emc_nmlfile);
+    printf("Using subroutine path : %s\n", emc_macrosPath);
+
+    if (pthread_mutex_init(&batchEntriesLock, NULL) != 0) {
+        printf("pthread_mutex_init failed\n");
+        return 1;
+    }
+
     if (initSockets()) {
         printf("error initializing sockets\n");
         exit(1);
@@ -781,8 +962,12 @@ int main(int argc, char *argv[])
         sigaction(SIGPIPE, &act, NULL);
     }
 
+    startTimeoutThread();
+
     if (useSockets)
         sockMain();
+
+    pthread_mutex_destroy(&batchEntriesLock);
 
     return 0;
 }

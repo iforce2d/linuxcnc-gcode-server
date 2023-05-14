@@ -1,11 +1,13 @@
 # linuxcnc-gcode-server
 Allows connecting to a LinuxCNC installation and executing commands, similar to linuxcncrsh.
 
-The motivation was to allow easier control by OpenPNP, to this end some non-standard (for LinuxCNC) commands will be intercepted and handled either within this server, or translated into something LinuxCNC can understand:
+The motivation was to allow easier control by OpenPNP. To this end some non-standard (for LinuxCNC) commands will be intercepted and handled either within this server, or translated into something LinuxCNC can understand:
 - M115 - firmware version
 - M114 - current position
 - M105 - read analog sensor
 - M400 - wait for completion
+- BEGINSUB - start batch
+- ENDSUB - send batch
 
 All other g-code commands will be passed through unchanged, and are relayed to LinuxCNC as MDI commands.
 
@@ -14,26 +16,32 @@ All other g-code commands will be passed through unchanged, and are relayed to L
 ## Non-standard commands
 
 #### M115
-Returns a string like:  
+No interaction with LinuxCNC. Returns a string like:  
+
 `ok FIRMWARE_NAME:linuxcnc-gcode, FIRMWARE_VERSION:0.1`
 
 #### M114
 Returns the current position of the machine, eg.  
+
 `ok X:1.200000 Y:3.400000 Z:5.600000 A:7.800000`
 
 #### M105
 Returns the values of the first four analog inputs (motion.analog-in-00 etc)  
+
 `ok T0:0.147000 T1:0.7890000 T2:0.000000 T3:0.000000`
 
 #### M400
 
-This command will cause all further commands to be deferred until the machine is idle.
+This command will cause all subsequent commands to be deferred until the machine is idle.
+
+#### BEGINSUB, ENDSUB
+See the section below about blending.
 
 <br>
 
 ## Building
 
-Requires the LinuxCNC headers and libs available on your system. On my system I built LinuxCNC from source which produced the package "linuxcnc-uspace-dev", which I then installed. Not sure how you would get this by other methods...
+Requires the LinuxCNC headers and libs available. On my system I built LinuxCNC from source which produced the package "linuxcnc-uspace-dev", which I then installed. Not sure how you would get this by other methods...
 
 With the requirements in place, you should be able to just run `make` to build.
 
@@ -43,9 +51,17 @@ This server uses NML to interface with LinuxCNC. It expects to find the NML defi
 
 ## Basic usage
 
-First startup LinuxCNC, then run this server. By default it will listen on port 5007, you can change this with the -p option, eg.
+First startup LinuxCNC, then run this server. By default it will listen on port 5007, or you can change this with the -p option, eg.
 
     ./linuxcnc-gcode-server -p 5050
+
+To check connection to the server, you can use a telnet connection like:
+
+    telnet 192.168.1.140 5007
+
+If the machine is enabled and homed, you should be able to move it around with g-code commands.
+
+![alt text](https://www.iforce2d.net/tmp/openpnp/Selection_1180.png)
 
 You can use the -e option to instruct the machine to be enabled and homed when the server starts, eg.
 
@@ -53,13 +69,12 @@ You can use the -e option to instruct the machine to be enabled and homed when t
 
 This is the equivalent of clicking the e-stop button off and the machine power button on, and then homing each axis that is not already homed. This is probably not advisable on a real machine, but it's quite convenient during development when using a dummy machine, to save some repetitive clicking. It also allows you to run a headless LinuxCNC without any traditional user interface, and still enable the machine and run g-code.
 
-To check connection to the server, you can use a telnet connection like:
+You can optionally specify the .ini file of your machine with the -i parameter, eg.:
 
-    telnet 192.168.1.140 5007
+    ./linuxcnc-gcode-server -i /path/to/your/machine.ini
 
-If the machine is enabled, you should be able to move it around with g-code commands.
+This is only necessary if you want to use the subroutines explained in the section below about blending.
 
-![alt text](https://www.iforce2d.net/tmp/openpnp/Selection_1180.png)
 
 <br>
 
@@ -176,6 +191,53 @@ The contents of this bash script should be:
 <br>
 
 ## Blending
-LinuxCNC is capable of blending consecutive segments together when G64 is in effect, but unfortunately sending commands via the MDI interface does not always allow this to happen. In my experiments, blending typically occurs in only 70-80% of cases where it would normally be expected. I think this is due to the lack of synchronization between the timing of commands entering the queue, and when those commands are allowed to start execution. For example if you issue two MDI commands and the machine starts executing the first one before the second has been received, blending cannot occur.
+LinuxCNC is capable of blending consecutive segments together when G64 is in effect, but unfortunately sending commands via the MDI interface does not always allow this to happen. In my experiments, blending typically occurs in only 70-80% of cases where it would normally be expected. This is due to the lack of synchronization between the timing of commands entering the queue, and when those commands are allowed to start execution. For example if you issue two MDI commands and the machine starts executing the first one before the second has been received, blending cannot occur.
 
-There are also other factors that interrupt blending, like the M64/M65 command which will always be executed immediately instead of being queued and performed sequentially with movements. Setting the acceleration via bash script as mentioned above also tends to interrupt blending, I found this can be somewhat improved by adding M400 after every acceleration setting, but it does not fully solve the problem.
+To work around this problem, multiple commands can be grouped into a batch for processing as a cohesive set by enclosing them inside `beginsub` and `endsub` keywords. This will cause the commands to be stored in a buffer and only sent to LinuxCNC when all commands of the group are known, and full blending can be achieved reliably. For example with this input:
+
+    beginsub
+    g1 x10 y20
+    g1 x25 y25
+    g1 x40 y20
+    endsub
+
+... nothing would happen until the `endsub`, at which point all the commands will be sent.
+
+To ensure that the grouped commands are all processed together, a temporary [o-code subroutine](https://linuxcnc.org/docs/html/gcode/o-code.html) file is created and executed. This file will be created in the location specified by the RS247NGC:SUBROUTINE_PATH property of your .ini file:
+
+![alt text](https://www.iforce2d.net/tmp/openpnp/Selection_1184.png)
+
+Since the subroutine file is only temporary and will be written and read potentially thousands of times during a pick and place job, it might be preferable to place it in RAM instead of on hard disk. You can find some info about which paths to use in [this Stack Overflow discussion](https://stackoverflow.com/questions/10982911/creating-temporary-files-in-bash). In the screenshot above, the /run/user/1000 path is actually a RAM location, and as such all the 'files' it contains will be lost when the computer is shut down. So if you already have your own subroutine files, you might actually want to use a normal hard disk location, or maybe copy them into the RAM location each time you start LinuxCNC.
+
+Because SUBROUTINE_PATH is defined in your .ini file, to use this feature you must provide the .ini file when starting the server, eg.:
+
+    ./linuxcnc-gcode-server -i /path/to/your/machine.ini
+
+You can check if these paths are correct when the server starts up:
+
+![alt text](https://www.iforce2d.net/tmp/openpnp/Selection_1186.png)
+
+Finally, to let OpenPNP manage these batches of commands, you can set up your `MOVE_TO_COMMAND` and `MOVE_TO_COMPLETE_COMMAND` so that a batch will be started before moves are issued, and finalized before the M400 'wait' command :
+
+![alt text](https://www.iforce2d.net/tmp/openpnp/Selection_1189.png)
+
+![alt text](https://www.iforce2d.net/tmp/openpnp/Selection_1187.png)
+
+A `beginsub` while a batch is already in progress has no effect.
+
+When using the OpenPNP user interface to jog the machine, the MOVE_TO_COMPLETE_COMMAND is not used, so there will be no `endsub` to complete the batch. To workaround this, a timeout is used to automatically send the batch to LinuxCNC if no further commands are given within a certain time. The default timeout is 250ms, you can change this with the -t parameter:
+
+    ./linuxcnc-gcode-server -t 750
+
+<b>Note:</b> even when using subroutines to process commands as a group, there are still other factors that can interrupt blending, like the M64/M65
+commands or setting the acceleration via bash script as mentioned above.
+
+<b>Note:</b> the commands within a `beginsub`/`endsub` block are given to LinuxCNC without any special handling, so you cannot use the 'non-standard' commands (M115, M114, M105, M400). These will be ignored inside a batch.
+
+<br>
+
+## Multiple clients
+
+Although this server is capable of communicating with multiple clients at the same time, that's not really the intended use case. The main issue is that the `beginsub` / `endsub` status is tracked globally on the server, not per client. So one client can start the batch and a different client could end it. If you want to switch between using different clients, just make sure there is no ongoing subroutine batch.
+
+Also note that if a client begins a batch but does not follow up with the necessary `enssub` (eg. by being prematurely disconnected) the batch will not be sent, and the server will continue storing commands in the buffer to send later. To prevent a situation where no further commands are ever sent to LinuxCNC, any ongoing subroutine group will be aborted when a new client connects.
