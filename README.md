@@ -221,7 +221,7 @@ Finally, to let OpenPNP manage these batches of commands, you can set up your `M
 
 ![alt text](https://www.iforce2d.net/tmp/openpnp/Selection_1189.png)
 
-![alt text](https://www.iforce2d.net/tmp/openpnp/Selection_1187.png)
+![alt text](https://www.iforce2d.net/tmp/openpnp/Selection_1190.png)
 
 A `beginsub` while a batch is already in progress has no effect.
 
