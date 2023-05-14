@@ -240,4 +240,3 @@ commands or setting the acceleration via bash script as mentioned above.
 
 Although this server is capable of communicating with multiple clients at the same time, that's not really the intended use case. The main issue is that the `beginsub` / `endsub` status is tracked globally on the server, not per client. So one client can start the batch and a different client could end it. If you want to switch between using different clients, just make sure there is no ongoing subroutine batch.
 
-Also note that if a client begins a batch but does not follow up with the necessary `enssub` (eg. by being prematurely disconnected) the batch will not be sent, and the server will continue storing commands in the buffer to send later. To prevent a situation where no further commands are ever sent to LinuxCNC, any ongoing subroutine group will be aborted when a new client connects.
