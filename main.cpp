@@ -875,7 +875,7 @@ void usage(char* pname) {
            "         --port     <port number>  (default=%d)\n"
            "         --enable   enable and home machine on startup\n"
            "         --timeout  <milliseconds>  (default=%d) auto-send batch if no endsub given within this duration after last command\n"
-           "          -inifile  <inifile>  (default=%s)\n"
+           "         --inifile  <inifile>  (default=%s)\n"
           , pname, port, autosendBatchTimeout, emc_inifile
     );
 }
