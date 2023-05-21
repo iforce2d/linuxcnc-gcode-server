@@ -69,6 +69,8 @@ char serverName[24] = "EMCNETSVR\0";
 int sessions = 0;
 int maxSessions = -1;
 
+std::string subRoutineFile = "tmp.ngc";
+
 struct option longopts[] = {
   {"help", 0, NULL, 'h'},
   {"port", 1, NULL, 'p'},
@@ -512,7 +514,14 @@ void endBatch(connectionRecType* context) {
 
     pthread_mutex_lock(&batchEntriesLock);
 
-    printf( "Sending batch\n" );
+    if ( batchEntries.empty() ) {
+        insideBatch = false;
+        pthread_mutex_unlock(&batchEntriesLock);
+        replyOk(context);
+        return;
+    }
+
+    printf( "Finalizing batch:\n" );
     std::vector<std::string>::iterator it = batchEntries.begin();
     while (it != batchEntries.end()) {
         std::string s = *it;
@@ -520,12 +529,30 @@ void endBatch(connectionRecType* context) {
         ++it;
     }
 
-    std::string subRoutineFile = std::string(emc_macrosPath) + "/tmp.ngc";
+    if ( batchEntries.size() == 1 ) {
+
+        printf( "Sending as single command\n" );
+
+        std::string s = *batchEntries.begin();
+
+        batchEntries.clear();
+        insideBatch = false;
+        pthread_mutex_unlock(&batchEntriesLock);
+
+        doMDI(context, s.c_str());
+
+        return;
+    }
+
+    printf( "Sending as subroutine\n" );
     FILE* f = fopen(subRoutineFile.c_str(), "w");
     if ( !f ) {
         printf( "*** Could not open file %s\n", subRoutineFile.c_str() );
+
         batchEntries.clear();
         insideBatch = false;
+        pthread_mutex_unlock(&batchEntriesLock);
+
         sprintf(error_string, "batch send failed, could not open tmp file");
         showError();
         return;
@@ -541,12 +568,10 @@ void endBatch(connectionRecType* context) {
     }
 
     fprintf(f, "o<tmp> endsub\n");
-
     fclose(f);
 
     batchEntries.clear();
     insideBatch = false;
-
     pthread_mutex_unlock(&batchEntriesLock);
 
     doMDI(context, "o<tmp> call");
@@ -582,6 +607,7 @@ int parseCommand(connectionRecType *context)
             case cmdResume:
                 // ignore
                 printf("(ignored inside batch)\n");
+                replyOk(context);
                 break;
             case cmdEndBatch:
                 endBatch(context);
@@ -598,6 +624,9 @@ int parseCommand(connectionRecType *context)
         switch (lookupToken(pch)) {
             case cmdBeginBatch:
                 beginBatch(context);
+                break;
+            case cmdEndBatch:
+                endBatch(context);
                 break;
 
             case cmdStatus:
@@ -918,6 +947,8 @@ int main(int argc, char *argv[])
     printf("Using ini file        : %s\n", emc_inifile);
     printf("Using nml file        : %s\n", emc_nmlfile);
     printf("Using subroutine path : %s\n", emc_macrosPath);
+
+    subRoutineFile = std::string(emc_macrosPath) + "/tmp.ngc";
 
     if (pthread_mutex_init(&batchEntriesLock, NULL) != 0) {
         printf("pthread_mutex_init failed\n");
