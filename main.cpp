@@ -182,7 +182,8 @@ bool allHomed() {
     updateStatus();
     return emcStatus->motion.joint[0].homed &&
            emcStatus->motion.joint[1].homed &&
-           emcStatus->motion.joint[2].homed;
+           emcStatus->motion.joint[2].homed &&
+      emcStatus->motion.joint[3].homed;
 }
 
 bool ensureHomed() {
@@ -421,6 +422,13 @@ void doOpenProgram(connectionRecType* context, char* inStr) {
 
     printf( "Doing load file: %s\n", inStr );
 
+    char* filenameStr = strtok(inStr, delims);
+    if ( filenameStr != NULL ) {
+        filenameStr = strtok(NULL, delims);
+    }
+
+    printf( "  Filename: %s\n", filenameStr );
+
     int ok = 0;
 
     printf("sendMdi...");
@@ -430,7 +438,7 @@ void doOpenProgram(connectionRecType* context, char* inStr) {
         showError();
 
     printf("sendProgramOpen... ");
-    ok = sendProgramOpen("/home/pi/rsh/setupOcode.ngc") == 0;
+    ok = sendProgramOpen( filenameStr ) == 0;
     printf("%s\n", ok ? "ok":"ng");
     if ( ! ok )
         showError();
@@ -585,10 +593,10 @@ int parseCommand(connectionRecType *context)
 
     printf("Parsing: %s\n", context->inBuf);
 
-    strtoupper(context->inBuf, INBUF_LEN-1);
-
     char originalInBuf[INBUF_LEN];
     strncpy(originalInBuf, context->inBuf, INBUF_LEN-1);
+
+    strtoupper(context->inBuf, INBUF_LEN-1);
 
     char* pch = strtok(context->inBuf, delims);
 
