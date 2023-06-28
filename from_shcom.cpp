@@ -265,7 +265,11 @@ int updateError()
         return -1;
     }
 
-    switch (type = emcErrorBuffer->read()) {
+    type = emcErrorBuffer->read();
+
+    //printf("------------ error type %d\n", type);
+
+    switch (type) {
     case -1:
         // error reading channel
         return -1;
@@ -325,7 +329,7 @@ int updateError()
         break;
     }
 
-    return 0;
+    return type;
 }
 
 #define EMC_COMMAND_DELAY   0.01	// how long to sleep between checks

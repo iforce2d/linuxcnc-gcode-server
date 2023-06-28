@@ -154,6 +154,25 @@ const char* getString_EMC_TASK_MODE( EMC_TASK_MODE_ENUM m) {
     return "?";
 }
 
+const char* getString_EMC_TASK_STATE_short( EMC_TASK_STATE_ENUM m) {
+    switch (m) {
+        case EMC_TASK_STATE_ESTOP:          return "ESTOP";
+        case EMC_TASK_STATE_ESTOP_RESET:    return "ESTOP_RESET";
+        case EMC_TASK_STATE_OFF:            return "OFF";
+        case EMC_TASK_STATE_ON:             return "ON";
+    }
+    return "?";
+}
+
+const char* getString_EMC_TASK_MODE_short( EMC_TASK_MODE_ENUM m) {
+    switch (m) {
+        case EMC_TASK_MODE_MANUAL:  return "MANUAL";
+        case EMC_TASK_MODE_AUTO:    return "AUTO";
+        case EMC_TASK_MODE_MDI:     return "MDI";
+    }
+    return "?";
+}
+
 void showStatus() {
     int ok = updateStatus() == 0;
     if ( ok ) {
@@ -183,16 +202,21 @@ bool allHomed() {
     return emcStatus->motion.joint[0].homed &&
            emcStatus->motion.joint[1].homed &&
            emcStatus->motion.joint[2].homed &&
-      emcStatus->motion.joint[3].homed;
+           emcStatus->motion.joint[3].homed;
 }
 
-bool ensureHomed() {
+bool ensureHomed(int timeoutSeconds = 10) {
+
     updateStatus();
     bool needHoming = false;
+
     for (int i = 0; i < 4; i++) {
         if ( ! emcStatus->motion.joint[i].homed ) {
             int ok = sendHome(i) == 0;
             printf("sendHome(%d) %s\n", i, ok ? "ok":"ng");
+            if ( updateError() > 0 ) {
+                return false;
+            }
             needHoming = true;
         }
     }
@@ -203,11 +227,11 @@ bool ensureHomed() {
     }
 
     printf("Waiting for home completion...\n");
-    for (int i = 0; !allHomed() && i < 1000; i++) {
+    for (int i = 0; !allHomed() && i < timeoutSeconds * 10; i++) {
         esleep(0.1);
     }
 
-    showStatus();
+    //showStatus();
 
     if ( ! allHomed() ) {
         printf("Homing failed!\n");
@@ -225,6 +249,7 @@ void showError(connectionRecType *context = NULL) {
         snprintf(buf, 512, "error: %s\n", error_string);
         write(context->cliSock, buf, strlen(buf));
     }
+    fflush(stdout);
 }
 
 void strtoupper(char * t, int n) {
@@ -240,6 +265,10 @@ void strtoupper(char * t, int n) {
 typedef enum {
     cmdStatus = 0,
     cmdAbort,
+    cmdEnable,
+    cmdHome,
+    cmdManual,
+    cmdMdi,
     cmdOpenProgram,
     cmdRunProgram,
     cmdPause,
@@ -255,7 +284,7 @@ typedef enum {
     cmdUnknown
 } commandTokenType;
 
-const char *commands[] = {"STATUS", "ABORT", "OPEN", "RUN", "PAUSE", "RESUME", "M114", "M115", "M105", "M400", "BEGINSUB", "ENDSUB", /*"M42", "M171",*/ ""};
+const char *commands[] = {"STATUS", "ABORT", "ENABLE", "HOME", "MANUAL", "MDI", "OPEN", "RUN", "PAUSE", "RESUME", "M114", "M115", "M105", "M400", "BEGINSUB", "ENDSUB", /*"M42", "M171",*/ ""};
 
 int lookupToken(char *s)
 {
@@ -275,15 +304,17 @@ void replyStatus( connectionRecType* context ) {
     showStatus(); // on server output as well
 
     char s[256];
-    sprintf(s, "%d %d (%d %d %d) %f %f %f\n",
-           emcStatus->task.state,
-           emcStatus->task.mode,
+    sprintf(s, "%s %s (%d %d %d %d) %f %f %f %f\n",
+           getString_EMC_TASK_STATE_short( emcStatus->task.state ),
+           getString_EMC_TASK_MODE_short( emcStatus->task.mode ),
            emcStatus->motion.joint[0].homed,
            emcStatus->motion.joint[1].homed,
            emcStatus->motion.joint[2].homed,
+           emcStatus->motion.joint[3].homed,
            emcStatus->motion.traj.position.tran.x,
            emcStatus->motion.traj.position.tran.y,
-           emcStatus->motion.traj.position.tran.z
+           emcStatus->motion.traj.position.tran.z,
+           emcStatus->motion.traj.position.a
     );
     write(context->cliSock, s, strlen(s));
 }
@@ -313,6 +344,9 @@ void replyFirmwareInfo( connectionRecType* context ) {
 }
 
 void replyOk( connectionRecType* context ) {
+
+    if ( ! context )
+        return;
 
     const char* okStr = "ok\n";
     write(context->cliSock, okStr, strlen(okStr));
@@ -413,9 +447,81 @@ void doAbort(connectionRecType* context) {
     int ok = sendAbort() == 0;
     printf("%s\n", ok ? "ok":"ng");
     if ( !ok )
-        showError();
+        showError(context);
     else
         replyOk(context);
+}
+
+bool estopOffAndMachineOn(connectionRecType *context) {
+
+    printf("sendEstopReset...");
+    int ok = sendEstopReset() == 0;
+    if ( !ok ) {
+        showError();
+        return false;
+    }
+    else {
+        printf("ok\nsendMachineOn...");
+        ok = sendMachineOn() == 0;
+        if ( !ok ) {
+            showError(context);
+            return false;
+        }
+    }
+
+    printf("ok\n");
+    replyOk(context);
+
+    return true;
+}
+
+bool setModeManual(connectionRecType *context){
+    int ok = 0;
+
+    printf("sendManual...");
+    ok = sendManual() == 0;
+    printf("%s\n", ok ? "ok":"ng");
+
+    updateStatus();
+    ok = ( emcStatus->task.mode == EMC_TASK_MODE_MANUAL );
+    if ( ! ok )
+        showError(context);
+    else
+        replyOk(context);
+
+    return ok;
+}
+
+bool setModeMdi(connectionRecType *context){
+    int ok = 0;
+
+    printf("sendMdi...");
+    ok = sendMdi() == 0;
+    printf("%s\n", ok ? "ok":"ng");
+
+    updateStatus();
+    ok = ( emcStatus->task.mode == EMC_TASK_MODE_MDI );
+    if ( ! ok )
+        showError(context);
+    else
+        replyOk(context);
+
+    return ok;
+}
+
+bool doHomeAll(connectionRecType *context){
+    int ok = 0;
+
+    printf("doHomeAll...\n");
+    ok = ensureHomed();
+
+    if ( !ok ) {
+        showError(context);
+    }
+    else
+        replyOk(context);
+
+    return ok;
 }
 
 void doOpenProgram(connectionRecType* context, char* inStr) {
@@ -435,13 +541,18 @@ void doOpenProgram(connectionRecType* context, char* inStr) {
     ok = sendMdi() == 0;
     printf("%s\n", ok ? "ok":"ng");
     if ( !ok )
-        showError();
+        showError(context);
 
     printf("sendProgramOpen... ");
     ok = sendProgramOpen( filenameStr ) == 0;
     printf("%s\n", ok ? "ok":"ng");
+
+    updateStatus();
+    if ( updateError() > 0 )
+        ok = false;
+
     if ( ! ok )
-        showError();
+        showError(context);
     else
         replyOk(context);
 }
@@ -460,8 +571,12 @@ void doRunProgram(connectionRecType* context) {
 
     ok = sendProgramRun(0) == 0;
     printf("sendProgramRun %s\n", ok ? "ok":"ng");
+
+    updateStatus();
+    ok = ( emcStatus->task.mode == EMC_TASK_MODE_AUTO );
+
     if ( !ok )
-        showError();
+        showError(context);
     else
         replyOk(context);
 }
@@ -473,7 +588,7 @@ void doPause(connectionRecType* context) {
     ok = sendProgramPause() == 0;
     printf("sendProgramPause %s\n", ok ? "ok":"ng");
     if ( !ok )
-        showError();
+        showError(context);
     else
         replyOk(context);
 }
@@ -485,7 +600,7 @@ void doResume(connectionRecType* context) {
     ok = sendProgramResume() == 0;
     printf("sendProgramResume %s\n", ok ? "ok":"ng");
     if ( !ok )
-        showError();
+        showError(context);
     else
         replyOk(context);
 }
@@ -609,6 +724,10 @@ int parseCommand(connectionRecType *context)
             case cmdGetAPinState:
             case cmdFinishMoves:
             case cmdAbort:
+            case cmdHome:
+            case cmdManual:
+            case cmdMdi:
+            case cmdEnable:
             case cmdOpenProgram:
             case cmdRunProgram:
             case cmdPause:
@@ -657,6 +776,18 @@ int parseCommand(connectionRecType *context)
                 break;
             case cmdAbort:
                 doAbort(context);
+                break;
+            case cmdHome:
+                doHomeAll(context);
+                break;
+            case cmdManual:
+                setModeManual(context);
+                break;
+            case cmdMdi:
+                setModeMdi(context);
+                break;
+            case cmdEnable:
+                estopOffAndMachineOn(context);
                 break;
             case cmdOpenProgram:
                 doOpenProgram(context, originalInBuf);
