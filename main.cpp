@@ -176,20 +176,54 @@ const char* getString_EMC_TASK_MODE_short( EMC_TASK_MODE_ENUM m) {
 void showStatus() {
     int ok = updateStatus() == 0;
     if ( ok ) {
-        printf("------\nstatus: %s\ntask.status: %s\ntask.mode: %s\nemcCommandSerialNumber: %d\necho_serial_number: %d\nhomed: %d %d %d %d\nPosition: %f %f %f %f\n",
-               getString_RCS_STATUS( (RCS_STATUS)emcStatus->state ),
-               getString_EMC_TASK_STATE( emcStatus->task.state ),
-               getString_EMC_TASK_MODE( emcStatus->task.mode ),
-               emcCommandSerialNumber,
-               emcStatus->echo_serial_number,
-               emcStatus->motion.joint[0].homed,
-               emcStatus->motion.joint[1].homed,
-               emcStatus->motion.joint[2].homed,
-               emcStatus->motion.joint[3].homed,
-               emcStatus->motion.traj.position.tran.x,
-               emcStatus->motion.traj.position.tran.y,
-               emcStatus->motion.traj.position.tran.z,
-               emcStatus->motion.traj.position.a
+
+        std::string statusFormat = "";
+        statusFormat += "------\n";
+        statusFormat += "status: %s\n";
+        statusFormat += "task.status: %s\n";
+        statusFormat += "task.mode: %s\n";
+        statusFormat += "homed: %d %d %d %d\n";
+        statusFormat += "g5x offset: %f %f %f %f\n";
+        statusFormat += "g92 offset: %f %f %f %f\n";
+        statusFormat += "Commanded position: %f %f %f %f\n";
+        statusFormat += "Actual position: %f %f %f %f\n";
+        statusFormat += "Workspace pos: %f %f %f %f\n";
+        statusFormat += "File: %s\n";
+
+        float wsx = emcStatus->motion.traj.actualPosition.tran.x - emcStatus->task.g5x_offset.tran.x - emcStatus->task.g92_offset.tran.x;
+        float wsy = emcStatus->motion.traj.actualPosition.tran.y - emcStatus->task.g5x_offset.tran.y - emcStatus->task.g92_offset.tran.y;
+        float wsz = emcStatus->motion.traj.actualPosition.tran.z - emcStatus->task.g5x_offset.tran.z - emcStatus->task.g92_offset.tran.z;
+        float wsa = emcStatus->motion.traj.actualPosition.a - emcStatus->task.g5x_offset.a - emcStatus->task.g92_offset.a;
+
+        printf(statusFormat.c_str(),
+                getString_RCS_STATUS( (RCS_STATUS)emcStatus->state ),
+                getString_EMC_TASK_STATE( emcStatus->task.state ),
+                getString_EMC_TASK_MODE( emcStatus->task.mode ),
+                emcStatus->motion.joint[0].homed,
+                emcStatus->motion.joint[1].homed,
+                emcStatus->motion.joint[2].homed,
+                emcStatus->motion.joint[3].homed,
+                emcStatus->task.g5x_offset.tran.x,
+                emcStatus->task.g5x_offset.tran.y,
+                emcStatus->task.g5x_offset.tran.z,
+                emcStatus->task.g5x_offset.a,
+                emcStatus->task.g92_offset.tran.x,
+                emcStatus->task.g92_offset.tran.y,
+                emcStatus->task.g92_offset.tran.z,
+                emcStatus->task.g92_offset.a,
+                emcStatus->motion.traj.position.tran.x,
+                emcStatus->motion.traj.position.tran.y,
+                emcStatus->motion.traj.position.tran.z,
+                emcStatus->motion.traj.position.a,
+                emcStatus->motion.traj.actualPosition.tran.x,
+                emcStatus->motion.traj.actualPosition.tran.y,
+                emcStatus->motion.traj.actualPosition.tran.z,
+                emcStatus->motion.traj.actualPosition.a,
+                wsx,
+                wsy,
+                wsz,
+                wsa,
+                emcStatus->task.file
         );
     }
     else
@@ -238,11 +272,13 @@ bool ensureHomed(int timeoutSeconds = 10) {
         return false;
     }
 
+    printf("Homing done.\n");
+
     return true;
 }
 
 void showError(connectionRecType *context = NULL) {
-    updateError();
+    //updateError();
     printf("%s\n", error_string);
     if ( context ) {
         char buf[512];
@@ -303,6 +339,11 @@ void replyStatus( connectionRecType* context ) {
 
     showStatus(); // on server output as well
 
+    float wsx = emcStatus->motion.traj.actualPosition.tran.x - emcStatus->task.g5x_offset.tran.x - emcStatus->task.g92_offset.tran.x;
+    float wsy = emcStatus->motion.traj.actualPosition.tran.y - emcStatus->task.g5x_offset.tran.y - emcStatus->task.g92_offset.tran.y;
+    float wsz = emcStatus->motion.traj.actualPosition.tran.z - emcStatus->task.g5x_offset.tran.z - emcStatus->task.g92_offset.tran.z;
+    float wsa = emcStatus->motion.traj.actualPosition.a - emcStatus->task.g5x_offset.a - emcStatus->task.g92_offset.a;
+
     char s[256];
     sprintf(s, "%s %s (%d %d %d %d) %f %f %f %f\n",
            getString_EMC_TASK_STATE_short( emcStatus->task.state ),
@@ -311,10 +352,14 @@ void replyStatus( connectionRecType* context ) {
            emcStatus->motion.joint[1].homed,
            emcStatus->motion.joint[2].homed,
            emcStatus->motion.joint[3].homed,
-           emcStatus->motion.traj.position.tran.x,
-           emcStatus->motion.traj.position.tran.y,
-           emcStatus->motion.traj.position.tran.z,
-           emcStatus->motion.traj.position.a
+//           emcStatus->motion.traj.position.tran.x,
+//           emcStatus->motion.traj.position.tran.y,
+//           emcStatus->motion.traj.position.tran.z,
+//           emcStatus->motion.traj.position.a
+            wsx,
+            wsy,
+            wsz,
+            wsa
     );
     write(context->cliSock, s, strlen(s));
 }
@@ -325,12 +370,21 @@ void replyPosition( connectionRecType* context ) {
 
     updateStatus();
 
+    float wsx = emcStatus->motion.traj.actualPosition.tran.x - emcStatus->task.g5x_offset.tran.x - emcStatus->task.g92_offset.tran.x;
+    float wsy = emcStatus->motion.traj.actualPosition.tran.y - emcStatus->task.g5x_offset.tran.y - emcStatus->task.g92_offset.tran.y;
+    float wsz = emcStatus->motion.traj.actualPosition.tran.z - emcStatus->task.g5x_offset.tran.z - emcStatus->task.g92_offset.tran.z;
+    float wsa = emcStatus->motion.traj.actualPosition.a - emcStatus->task.g5x_offset.a - emcStatus->task.g92_offset.a;
+
     char s[256];
     sprintf(s, "ok X:%f Y:%f Z:%f A:%f\n",
-           emcStatus->motion.traj.position.tran.x,
-           emcStatus->motion.traj.position.tran.y,
-           emcStatus->motion.traj.position.tran.z,
-           emcStatus->motion.traj.position.a
+//           emcStatus->motion.traj.position.tran.x,
+//           emcStatus->motion.traj.position.tran.y,
+//           emcStatus->motion.traj.position.tran.z,
+//           emcStatus->motion.traj.position.a
+            wsx,
+            wsy,
+            wsz,
+            wsa
     );
     write(context->cliSock, s, strlen(s));
 }
@@ -377,39 +431,57 @@ void replyFinishMoves( connectionRecType* context ) {
     replyOk(context);
 }
 
+bool ensureTaskMode(connectionRecType* context, EMC_TASK_MODE_ENUM whichMode) {
+
+    if ( whichMode == EMC_TASK_MODE_AUTO )
+        return false;
+
+    const char* modeName = getString_EMC_TASK_MODE_short(whichMode);
+
+    updateStatus();
+    if ( emcStatus->task.mode != whichMode ) {
+        printf("send mode change to %s ..." , modeName);
+        int res = (whichMode == EMC_TASK_MODE_MDI) ? sendMdi() : sendManual();
+        int ok = res == 0;
+        printf("%s\n", ok ? "ok":"ng");
+        if ( !ok ) {
+            showError(context);
+            return false;
+        }
+    }
+
+    updateStatus();
+    if ( emcStatus->task.mode != whichMode ) {
+        char buf[128];
+        sprintf(buf, "error: could not enter %s mode\n", modeName);
+        printf(buf);
+        if ( context )
+            write(context->cliSock, buf, strlen(buf));
+        return false;
+    }
+
+    return true;
+}
+
 // context can be NULL for this one if a batch is being auto-cleared
 void doMDI(connectionRecType* context, const char* inStr, bool wait = false) {
 
     printf( "Doing MDI command: %s\n", inStr );
 
-    int ok = 0;
-
-    // ensure MDI mode
-    updateStatus();
-    if ( emcStatus->task.mode != EMC_TASK_MODE_MDI ) {
-        printf("sendMdi...");
-        ok = sendMdi() == 0;
-        printf("%s\n", ok ? "ok":"ng");
-        if ( !ok ) {
-            showError();
-            return;
-        }
-    }
-
-    updateStatus();
-    if ( emcStatus->task.mode != EMC_TASK_MODE_MDI ) {
-        const char* noMdi = "error: could not enter MDI mode\n";
-        printf(noMdi);
-        if ( context )
-            write(context->cliSock, noMdi, strlen(noMdi));
+    if ( ! ensureTaskMode(context, EMC_TASK_MODE_MDI) )
         return;
-    }
 
     //emcWaitType = EMC_WAIT_DONE;
 
     printf("sendMdiCmd... "); fflush(stdout);
-    ok = sendMdiCmd( inStr ) == 0;
+    int ok = sendMdiCmd( inStr ) == 0;
     printf("%s\n", ok ? "ok":"ng");
+
+    //usleep( 100 );
+
+    updateStatus();
+    if ( updateError() > 0 )
+        ok = false;
 
     if ( context ) {
         if ( ! ok ) {
@@ -457,7 +529,7 @@ bool estopOffAndMachineOn(connectionRecType *context) {
     printf("sendEstopReset...");
     int ok = sendEstopReset() == 0;
     if ( !ok ) {
-        showError();
+        showError(context);
         return false;
     }
     else {
@@ -510,10 +582,12 @@ bool setModeMdi(connectionRecType *context){
 }
 
 bool doHomeAll(connectionRecType *context){
-    int ok = 0;
+
+    if ( ! ensureTaskMode(context, EMC_TASK_MODE_MANUAL) )
+        return false;
 
     printf("doHomeAll...\n");
-    ok = ensureHomed();
+    int ok = ensureHomed();
 
     if ( !ok ) {
         showError(context);
@@ -567,7 +641,7 @@ void doRunProgram(connectionRecType* context) {
     ok = sendAuto() == 0;
     printf("%s\n", ok ? "ok":"ng");
     if ( !ok )
-        showError();
+        showError(context);
 
     ok = sendProgramRun(0) == 0;
     printf("sendProgramRun %s\n", ok ? "ok":"ng");
@@ -677,7 +751,7 @@ void endBatch(connectionRecType* context) {
         pthread_mutex_unlock(&batchEntriesLock);
 
         sprintf(error_string, "batch send failed, could not open tmp file");
-        showError();
+        showError(context);
         return;
     }
 
@@ -702,9 +776,19 @@ void endBatch(connectionRecType* context) {
 
 }
 
+void clearErrorBuffer() {
+
+    updateStatus();
+    while ( updateError() > 0 ) {
+        //updateStatus();
+    }
+}
+
 int parseCommand(connectionRecType *context)
 {
     int ret = 0;
+
+    clearErrorBuffer();
 
     printf("Parsing: %s\n", context->inBuf);
 
@@ -742,67 +826,63 @@ int parseCommand(connectionRecType *context)
             default:
                 queueBatchEntry(context, originalInBuf);
         }
-
-        return ret;
     }
+    else {
+        if (pch != NULL) {
 
-    if (pch != NULL) {
+            switch (lookupToken(pch)) {
+                case cmdBeginBatch:
+                    beginBatch(context);
+                    break;
+                case cmdEndBatch:
+                    endBatch(context);
+                    break;
 
-        switch (lookupToken(pch)) {
-            case cmdBeginBatch:
-                beginBatch(context);
-                break;
-            case cmdEndBatch:
-                endBatch(context);
-                break;
-
-            case cmdStatus:
-                replyStatus(context);
-                break;
-            case cmdFirmwareInfo:
-                replyFirmwareInfo(context);
-                break;
-            case cmdPosition:
-                replyPosition(context);
-                break;
-//            case cmdSetDPinState:
-//                setDPinState(context, originalInBuf);
-//                break;
-            case cmdGetAPinState:
-                getAPinState(context);
-                break;
-            case cmdFinishMoves:
-                replyFinishMoves(context);
-                break;
-            case cmdAbort:
-                doAbort(context);
-                break;
-            case cmdHome:
-                doHomeAll(context);
-                break;
-            case cmdManual:
-                setModeManual(context);
-                break;
-            case cmdMdi:
-                setModeMdi(context);
-                break;
-            case cmdEnable:
-                estopOffAndMachineOn(context);
-                break;
-            case cmdOpenProgram:
-                doOpenProgram(context, originalInBuf);
-                break;
-            case cmdRunProgram:
-                doRunProgram(context);
-                break;
-            case cmdPause:
-                doPause(context);
-                break;
-            case cmdResume:
-                doResume(context);
-                break;
-            default:
-                doMDI(context, originalInBuf);
+                case cmdStatus:
+                    replyStatus(context);
+                    break;
+                case cmdFirmwareInfo:
+                    replyFirmwareInfo(context);
+                    break;
+                case cmdPosition:
+                    replyPosition(context);
+                    break;
+                case cmdGetAPinState:
+                    getAPinState(context);
+                    break;
+                case cmdFinishMoves:
+                    replyFinishMoves(context);
+                    break;
+                case cmdAbort:
+                    doAbort(context);
+                    break;
+                case cmdHome:
+                    doHomeAll(context);
+                    break;
+                case cmdManual:
+                    setModeManual(context);
+                    break;
+                case cmdMdi:
+                    setModeMdi(context);
+                    break;
+                case cmdEnable:
+                    estopOffAndMachineOn(context);
+                    break;
+                case cmdOpenProgram:
+                    doOpenProgram(context, originalInBuf);
+                    break;
+                case cmdRunProgram:
+                    doRunProgram(context);
+                    break;
+                case cmdPause:
+                    doPause(context);
+                    break;
+                case cmdResume:
+                    doResume(context);
+                    break;
+                default:
+                    doMDI(context, originalInBuf);
+            }
         }
     }
 
