@@ -43,7 +43,7 @@ See the section below about blending.
 
 ## LinuxCNC operator commands
 
-You can do most of the operations that linuxcncrsh originally included, plus a few more. Currently some of these might only work for a 4 axis setup.
+Currently some of these might only work for a 4 axis setup.
 
 #### status
 Returns information about estop/machine status, task mode, axis homed, and work position, eg.:
