@@ -15,6 +15,8 @@ All other g-code commands will be passed through unchanged, and are relayed to L
 
 ## Non-standard commands
 
+These commands are to let OpenPNP fetch some information from the LinuxCNC side, and to help the synchronization between the two systems.
+
 #### M115
 No interaction with LinuxCNC. Returns a string like:  
 
@@ -36,6 +38,38 @@ This command will cause all subsequent commands to be deferred until the machine
 
 #### BEGINSUB, ENDSUB
 See the section below about blending.
+
+<br>
+
+## LinuxCNC operator commands
+
+You can do most of the operations that linuxcncrsh originally included, plus a few more. Currently some of these might only work for a 4 axis setup.
+
+#### status
+Returns information about estop/machine status, task mode, axis homed, and work position, eg.:
+
+`ESTOP MANUAL (0 0 0 0) -97.146500 -14.642751 2.000000 0.000000`
+
+`ON MDI (1 1 1 1) 100.003510 -0.007745 0.005019 0.000000`
+
+#### enable
+Same as clearing estop and then toggling the machine on.
+#### home
+Same as clicking home for axes 0-3 in that order. There is currently a ten second timeout, so if your homing takes longer this will incorrectly report a failure.
+#### abort
+Same as hitting ESC or the stop button in Axis GUI.
+#### manual
+Attempts to enter manual mode.
+#### mdi
+Attempts to enter MDI mode.
+#### open &lt;filename&gt;
+Attempts to open the given gcode file.
+#### run
+Same as clicking the run button in Axis GUI.
+#### pause
+Same as clicking the pause button in Axis GUI.
+#### resume
+Same as resuming after a pause in Axis GUI.
 
 <br>
 
