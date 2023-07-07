@@ -70,6 +70,8 @@ Same as clicking the run button in Axis GUI.
 Same as clicking the pause button in Axis GUI.
 #### resume
 Same as resuming after a pause in Axis GUI.
+#### file
+Displays the currently loaded filename
 
 <br>
 

@@ -278,7 +278,12 @@ bool ensureHomed(int timeoutSeconds = 10) {
 }
 
 void showError(connectionRecType *context = NULL) {
-    //updateError();
+
+    // some callers expect this function to update the string, but we shouldn't do it
+    // when a string is already present, otherwise the current error will be skipped
+    if ( error_string[0] == 0 )
+        updateError();
+
     printf("%s\n", error_string);
     if ( context ) {
         char buf[512];
@@ -306,6 +311,7 @@ typedef enum {
     cmdManual,
     cmdMdi,
     cmdOpenProgram,
+    cmdShowFile,
     cmdRunProgram,
     cmdPause,
     cmdResume,
@@ -320,7 +326,7 @@ typedef enum {
     cmdUnknown
 } commandTokenType;
 
-const char *commands[] = {"STATUS", "ABORT", "ENABLE", "HOME", "MANUAL", "MDI", "OPEN", "RUN", "PAUSE", "RESUME", "M114", "M115", "M105", "M400", "BEGINSUB", "ENDSUB", /*"M42", "M171",*/ ""};
+const char *commands[] = {"STATUS", "ABORT", "ENABLE", "HOME", "MANUAL", "MDI", "OPEN", "FILE", "RUN", "PAUSE", "RESUME", "M114", "M115", "M105", "M400", "BEGINSUB", "ENDSUB", /*"M42", "M171",*/ ""};
 
 int lookupToken(char *s)
 {
@@ -572,6 +578,7 @@ bool setModeMdi(connectionRecType *context){
     printf("%s\n", ok ? "ok":"ng");
 
     updateStatus();
+    showStatus();
     ok = ( emcStatus->task.mode == EMC_TASK_MODE_MDI );
     if ( ! ok )
         showError(context);
@@ -596,6 +603,19 @@ bool doHomeAll(connectionRecType *context){
         replyOk(context);
 
     return ok;
+}
+
+void doShowFile(connectionRecType* context) {
+
+    updateStatus();
+
+    char buf[512];
+    if ( emcStatus->task.file[0] )
+        sprintf(buf, "%s\n", emcStatus->task.file);
+    else
+        sprintf(buf, "No file loaded\n");
+    write(context->cliSock, buf, strlen(buf));
+
 }
 
 void doOpenProgram(connectionRecType* context, char* inStr) {
@@ -812,7 +832,7 @@ int parseCommand(connectionRecType *context)
             case cmdManual:
             case cmdMdi:
             case cmdEnable:
-            case cmdOpenProgram:
+            case cmdShowFile:
             case cmdRunProgram:
             case cmdPause:
             case cmdResume:
@@ -870,6 +890,9 @@ int parseCommand(connectionRecType *context)
                     break;
                 case cmdOpenProgram:
                     doOpenProgram(context, originalInBuf);
+                    break;
+                case cmdShowFile:
+                    doShowFile(context);
                     break;
                 case cmdRunProgram:
                     doRunProgram(context);
