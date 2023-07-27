@@ -483,7 +483,7 @@ void doMDI(connectionRecType* context, const char* inStr, bool wait = false) {
     int ok = sendMdiCmd( inStr ) == 0;
     printf("%s\n", ok ? "ok":"ng");
 
-    //usleep( 100 );
+    usleep( 100 ); // seems to be necessary before the updateStatus below will detect any problems
 
     updateStatus();
     if ( updateError() > 0 )
@@ -667,7 +667,7 @@ void doRunProgram(connectionRecType* context) {
     printf("sendProgramRun %s\n", ok ? "ok":"ng");
 
     updateStatus();
-    ok = ( emcStatus->task.mode == EMC_TASK_MODE_AUTO );
+    ok = ( emcStatus->task.mode == EMC_TASK_MODE_AUTO ) && (updateError() == 0);
 
     if ( !ok )
         showError(context);
