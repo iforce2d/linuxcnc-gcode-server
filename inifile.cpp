@@ -19,8 +19,10 @@
 #include <ctype.h>              /* isspace() */
 #include <fcntl.h>
 
+#ifndef LINELEN
+#define LINELEN 255
+#endif
 
-#include "linuxcnc/emc.hh"
 #include "inifile.hh"
 
 #define MAX_EXTEND_LINES 20
