@@ -20,7 +20,7 @@
 #include <fcntl.h>
 
 
-#include "config.h"
+#include "linuxcnc/emc.hh"
 #include "inifile.hh"
 
 #define MAX_EXTEND_LINES 20
