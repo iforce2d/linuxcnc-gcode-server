@@ -55,7 +55,7 @@ Returns information about estop/machine status, task mode, axis homed, and work 
 #### enable
 Same as clearing estop and then toggling the machine on.
 #### home
-Same as clicking home for axes 0-3 in that order. There is currently a ten second timeout, so if your homing takes longer this will incorrectly report a failure.
+Same as clicking "home all" in Axis GUI. Already homed axes will be ignored. There is currently a ten second timeout, so if your homing takes longer this will incorrectly report a failure. To home an individual axis, add the axis index, eg. "home 0".
 #### abort
 Same as hitting ESC or the stop button in Axis GUI.
 #### manual

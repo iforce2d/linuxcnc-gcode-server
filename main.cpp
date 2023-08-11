@@ -239,26 +239,32 @@ bool allHomed() {
            emcStatus->motion.joint[3].homed;
 }
 
-bool ensureHomed(int timeoutSeconds = 10) {
+bool isHomed(int axisIndex) {
+    updateStatus();
+    return emcStatus->motion.joint[ axisIndex ].homed;
+}
+
+bool ensureHomeAll(int timeoutSeconds = 10) {
 
     updateStatus();
     bool needHoming = false;
 
     for (int i = 0; i < 4; i++) {
         if ( ! emcStatus->motion.joint[i].homed ) {
-            int ok = sendHome(i) == 0;
-            printf("sendHome(%d) %s\n", i, ok ? "ok":"ng");
-            if ( updateError() > 0 ) {
-                return false;
-            }
             needHoming = true;
         }
     }
 
     if ( !needHoming ) {
-        printf("Already homed.\n");
+        printf("All joints already homed.\n");
         return true;
     }
+
+    // send -1 to home all axes according to ini ordering
+    int ok = sendHome(-1) == 0;
+    printf("sendHome(%d) %s\n", -1, ok ? "ok":"ng");
+    if ( updateError() > 0 )
+        return false;
 
     printf("Waiting for home completion...\n");
     for (int i = 0; !allHomed() && i < timeoutSeconds * 10; i++) {
@@ -268,6 +274,42 @@ bool ensureHomed(int timeoutSeconds = 10) {
     //showStatus();
 
     if ( ! allHomed() ) {
+        printf("Homing failed!\n");
+        return false;
+    }
+
+    printf("Homing done.\n");
+
+    return true;
+}
+
+bool ensureHomeAxis(int axisIndex, int timeoutSeconds = 10) {
+
+    updateStatus();
+    bool needHoming = false;
+
+    if ( ! emcStatus->motion.joint[axisIndex].homed ) {
+        int ok = sendHome(axisIndex) == 0;
+        printf("sendHome(%d) %s\n", axisIndex, ok ? "ok":"ng");
+        if ( updateError() > 0 ) {
+            return false;
+        }
+        needHoming = true;
+    }
+
+    if ( !needHoming ) {
+        printf("Axis %d already homed.\n", axisIndex);
+        return true;
+    }
+
+    printf("Waiting for home completion...\n");
+    for (int i = 0; !isHomed(axisIndex) && i < timeoutSeconds * 10; i++) {
+        esleep(0.1);
+    }
+
+    //showStatus();
+
+    if ( ! isHomed(axisIndex) ) {
         printf("Homing failed!\n");
         return false;
     }
@@ -588,13 +630,33 @@ bool setModeMdi(connectionRecType *context){
     return ok;
 }
 
-bool doHomeAll(connectionRecType *context){
+bool doHome(connectionRecType *context, char* inStr){
 
     if ( ! ensureTaskMode(context, EMC_TASK_MODE_MANUAL) )
         return false;
 
-    printf("doHomeAll...\n");
-    int ok = ensureHomed();
+    bool ok = false;
+
+    char* axisStr = strtok(inStr, delims); // remove "home"
+    if ( axisStr != NULL ) {
+        axisStr = strtok(NULL, delims);
+    }
+
+    if ( ! axisStr ) {
+        printf("doHome all ...\n");
+        ok = ensureHomeAll();
+    }
+    else {
+        int axisIndex = atoi( axisStr );
+        if ( axisIndex < 0 ) {
+            printf("doHome all ...\n");
+            ok = ensureHomeAll();
+        }
+        else {
+            printf("doHome %d ...\n", axisIndex);
+            ok = ensureHomeAxis(axisIndex);
+        }
+    }
 
     if ( !ok ) {
         showError(context);
@@ -622,7 +684,7 @@ void doOpenProgram(connectionRecType* context, char* inStr) {
 
     printf( "Doing load file: %s\n", inStr );
 
-    char* filenameStr = strtok(inStr, delims);
+    char* filenameStr = strtok(inStr, delims); // remove "open"
     if ( filenameStr != NULL ) {
         filenameStr = strtok(NULL, delims);
     }
@@ -877,7 +939,7 @@ int parseCommand(connectionRecType *context)
                     doAbort(context);
                     break;
                 case cmdHome:
-                    doHomeAll(context);
+                    doHome(context, originalInBuf);
                     break;
                 case cmdManual:
                     setModeManual(context);
@@ -1124,7 +1186,7 @@ bool enableMachine() {
 
     //showStatus();
 
-    if ( ! ensureHomed() ) {
+    if ( ! ensureHomeAll() ) {
         printf("Could not home joints");
         return false;
     }
@@ -1154,7 +1216,7 @@ void usage(char* pname) {
 int main(int argc, char *argv[])
 {
     int opt;
-
+printf("LINELEN= %d\n", LINELEN);
     initMain();
     // process local command line args
     while((opt = getopt_long(argc, argv, "hp:ei:t:", longopts, NULL)) != - 1) {
