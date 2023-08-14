@@ -69,6 +69,8 @@ char serverName[24] = "EMCNETSVR\0";
 int sessions = 0;
 int maxSessions = -1;
 
+int numJoints = 4;
+
 std::string subRoutineFile = "tmp.ngc";
 
 struct option longopts[] = {
@@ -177,12 +179,18 @@ void showStatus() {
     int ok = updateStatus() == 0;
     if ( ok ) {
 
+        std::string homeFormat = "homed:";
+        for (int i = 0; i < numJoints; i++) {
+            homeFormat += " " + std::to_string(emcStatus->motion.joint[i].homed);
+        }
+        homeFormat += "\n";
+
         std::string statusFormat = "";
         statusFormat += "------\n";
         statusFormat += "status: %s\n";
         statusFormat += "task.status: %s\n";
         statusFormat += "task.mode: %s\n";
-        statusFormat += "homed: %d %d %d %d\n";
+        statusFormat += homeFormat;
         statusFormat += "g5x offset: %f %f %f %f\n";
         statusFormat += "g92 offset: %f %f %f %f\n";
         statusFormat += "Commanded position: %f %f %f %f\n";
@@ -199,10 +207,10 @@ void showStatus() {
                 getString_RCS_STATUS( (RCS_STATUS)emcStatus->state ),
                 getString_EMC_TASK_STATE( emcStatus->task.state ),
                 getString_EMC_TASK_MODE( emcStatus->task.mode ),
-                emcStatus->motion.joint[0].homed,
-                emcStatus->motion.joint[1].homed,
-                emcStatus->motion.joint[2].homed,
-                emcStatus->motion.joint[3].homed,
+//                emcStatus->motion.joint[0].homed,
+//                emcStatus->motion.joint[1].homed,
+//                emcStatus->motion.joint[2].homed,
+//                emcStatus->motion.joint[3].homed,
                 emcStatus->task.g5x_offset.tran.x,
                 emcStatus->task.g5x_offset.tran.y,
                 emcStatus->task.g5x_offset.tran.z,
@@ -233,10 +241,14 @@ void showStatus() {
 
 bool allHomed() {
     updateStatus();
-    return emcStatus->motion.joint[0].homed &&
-           emcStatus->motion.joint[1].homed &&
-           emcStatus->motion.joint[2].homed &&
-           emcStatus->motion.joint[3].homed;
+    bool ok = true;
+    for (int i = 0; i < numJoints; i++) {
+        if ( ! emcStatus->motion.joint[i].homed ) {
+            ok = false;
+            break;
+        }
+    }
+    return ok;
 }
 
 bool isHomed(int axisIndex) {
@@ -244,12 +256,12 @@ bool isHomed(int axisIndex) {
     return emcStatus->motion.joint[ axisIndex ].homed;
 }
 
-bool ensureHomeAll(int timeoutSeconds = 10) {
+bool ensureHomeAll(int timeoutSeconds = 30) {
 
     updateStatus();
     bool needHoming = false;
 
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < numJoints; i++) {
         if ( ! emcStatus->motion.joint[i].homed ) {
             needHoming = true;
         }
@@ -283,7 +295,7 @@ bool ensureHomeAll(int timeoutSeconds = 10) {
     return true;
 }
 
-bool ensureHomeAxis(int axisIndex, int timeoutSeconds = 10) {
+bool ensureHomeAxis(int axisIndex, int timeoutSeconds = 30) {
 
     updateStatus();
     bool needHoming = false;
@@ -392,14 +404,20 @@ void replyStatus( connectionRecType* context ) {
     float wsz = emcStatus->motion.traj.actualPosition.tran.z - emcStatus->task.g5x_offset.tran.z - emcStatus->task.g92_offset.tran.z;
     float wsa = emcStatus->motion.traj.actualPosition.a - emcStatus->task.g5x_offset.a - emcStatus->task.g92_offset.a;
 
+    std::string homeFormat = "homed:";
+    for (int i = 0; i < numJoints; i++) {
+        homeFormat += " " + std::to_string(emcStatus->motion.joint[i].homed);
+    }
+
     char s[256];
-    sprintf(s, "%s %s (%d %d %d %d) %f %f %f %f\n",
+    sprintf(s, "%s %s (%s) %f %f %f %f\n",
            getString_EMC_TASK_STATE_short( emcStatus->task.state ),
            getString_EMC_TASK_MODE_short( emcStatus->task.mode ),
-           emcStatus->motion.joint[0].homed,
-           emcStatus->motion.joint[1].homed,
-           emcStatus->motion.joint[2].homed,
-           emcStatus->motion.joint[3].homed,
+           homeFormat.c_str(),
+//           emcStatus->motion.joint[0].homed,
+//           emcStatus->motion.joint[1].homed,
+//           emcStatus->motion.joint[2].homed,
+//           emcStatus->motion.joint[3].homed,
 //           emcStatus->motion.traj.position.tran.x,
 //           emcStatus->motion.traj.position.tran.y,
 //           emcStatus->motion.traj.position.tran.z,
@@ -1273,6 +1291,10 @@ printf("LINELEN= %d\n", LINELEN);
     // get current serial number, and save it for restoring when we quit
     // so as not to interfere with real operator interface
     updateStatus();
+
+    numJoints = emcStatus->motion.traj.joints;
+    printf("Number of joints      : %d\n", numJoints);
+
     emcCommandSerialNumber = emcStatus->echo_serial_number;
 
     if ( enableMachineOnStartup )
