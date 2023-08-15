@@ -175,64 +175,79 @@ const char* getString_EMC_TASK_MODE_short( EMC_TASK_MODE_ENUM m) {
     return "?";
 }
 
+std::string getEmcPoseString(EmcPose &pose, bool addLetters = false) {
+
+    std::string str = "";
+    if ( numJoints > 0 )
+        str += (addLetters?" X:":" ") + std::to_string( pose.tran.x );
+    if ( numJoints > 1 )
+        str += (addLetters?" Y:":" ") + std::to_string( pose.tran.y );
+    if ( numJoints > 2 )
+        str += (addLetters?" Z:":" ") + std::to_string( pose.tran.z );
+    if ( numJoints > 3 )
+        str += (addLetters?" A:":" ") + std::to_string( pose.a );
+    if ( numJoints > 4 )
+        str += (addLetters?" B:":" ") + std::to_string( pose.b );
+    if ( numJoints > 5 )
+        str += (addLetters?" C:":" ") + std::to_string( pose.c );
+    if ( numJoints > 6 )
+        str += (addLetters?" U:":" ") + std::to_string( pose.u );
+    if ( numJoints > 7 )
+        str += (addLetters?" V:":" ") + std::to_string( pose.v );
+    if ( numJoints > 8 )
+        str += (addLetters?" W:":" ") + std::to_string( pose.w );
+
+    return str;
+}
+
+std::string getWorkspacePosString(bool addLetters = false) {
+
+    EmcPose wsPose;
+
+    // workspace coordinates
+    wsPose.tran.x = emcStatus->motion.traj.actualPosition.tran.x - emcStatus->task.g5x_offset.tran.x - emcStatus->task.g92_offset.tran.x;
+    wsPose.tran.y = emcStatus->motion.traj.actualPosition.tran.y - emcStatus->task.g5x_offset.tran.y - emcStatus->task.g92_offset.tran.y;
+    wsPose.tran.z = emcStatus->motion.traj.actualPosition.tran.z - emcStatus->task.g5x_offset.tran.z - emcStatus->task.g92_offset.tran.z;
+    wsPose.a = emcStatus->motion.traj.actualPosition.a - emcStatus->task.g5x_offset.a - emcStatus->task.g92_offset.a;
+    wsPose.b = emcStatus->motion.traj.actualPosition.b - emcStatus->task.g5x_offset.b - emcStatus->task.g92_offset.b;
+    wsPose.c = emcStatus->motion.traj.actualPosition.c - emcStatus->task.g5x_offset.c - emcStatus->task.g92_offset.c;
+    wsPose.u = emcStatus->motion.traj.actualPosition.u - emcStatus->task.g5x_offset.u - emcStatus->task.g92_offset.u;
+    wsPose.v = emcStatus->motion.traj.actualPosition.v - emcStatus->task.g5x_offset.v - emcStatus->task.g92_offset.v;
+    wsPose.w = emcStatus->motion.traj.actualPosition.w - emcStatus->task.g5x_offset.w - emcStatus->task.g92_offset.w;
+
+    return getEmcPoseString( wsPose, addLetters );
+}
+
 void showStatus() {
     int ok = updateStatus() == 0;
     if ( ok ) {
 
-        std::string homeFormat = "homed:";
+        std::string homeStr = "homed:";
         for (int i = 0; i < numJoints; i++) {
-            homeFormat += " " + std::to_string(emcStatus->motion.joint[i].homed);
+            homeStr += " " + std::to_string(emcStatus->motion.joint[i].homed);
         }
-        homeFormat += "\n";
+        homeStr += "\n";
+
+        std::string wsStr = getWorkspacePosString();
+        std::string g5xStr = getEmcPoseString( emcStatus->task.g5x_offset );
+        std::string g92Str = getEmcPoseString( emcStatus->task.g92_offset );
+        std::string commandedStr = getEmcPoseString( emcStatus->motion.traj.position );
+        std::string actualStr = getEmcPoseString( emcStatus->motion.traj.actualPosition );
 
         std::string statusFormat = "";
         statusFormat += "------\n";
-        statusFormat += "status: %s\n";
-        statusFormat += "task.status: %s\n";
-        statusFormat += "task.mode: %s\n";
-        statusFormat += homeFormat;
-        statusFormat += "g5x offset: %f %f %f %f\n";
-        statusFormat += "g92 offset: %f %f %f %f\n";
-        statusFormat += "Commanded position: %f %f %f %f\n";
-        statusFormat += "Actual position: %f %f %f %f\n";
-        statusFormat += "Workspace pos: %f %f %f %f\n";
-        statusFormat += "File: %s\n";
+        //statusFormat += "status: " + std::string(getString_RCS_STATUS( (RCS_STATUS)emcStatus->state )) + "\n";
+        statusFormat += "task.status: " + std::string(getString_EMC_TASK_STATE( emcStatus->task.state )) + "\n";
+        statusFormat += "task.mode: " + std::string(getString_EMC_TASK_MODE( emcStatus->task.mode )) + "\n";
+        statusFormat += homeStr;
+        statusFormat += "g5x offset:" + g5xStr + "\n";
+        statusFormat += "g92 offset:" + g92Str + "\n";
+        statusFormat += "Commanded position:" + commandedStr + "\n";
+        statusFormat += "Actual position:" + actualStr + "\n";
+        statusFormat += "Workspace pos:" + wsStr + "\n";
+        statusFormat += "File: " + std::string(emcStatus->task.file) + "\n";
 
-        float wsx = emcStatus->motion.traj.actualPosition.tran.x - emcStatus->task.g5x_offset.tran.x - emcStatus->task.g92_offset.tran.x;
-        float wsy = emcStatus->motion.traj.actualPosition.tran.y - emcStatus->task.g5x_offset.tran.y - emcStatus->task.g92_offset.tran.y;
-        float wsz = emcStatus->motion.traj.actualPosition.tran.z - emcStatus->task.g5x_offset.tran.z - emcStatus->task.g92_offset.tran.z;
-        float wsa = emcStatus->motion.traj.actualPosition.a - emcStatus->task.g5x_offset.a - emcStatus->task.g92_offset.a;
-
-        printf(statusFormat.c_str(),
-                getString_RCS_STATUS( (RCS_STATUS)emcStatus->state ),
-                getString_EMC_TASK_STATE( emcStatus->task.state ),
-                getString_EMC_TASK_MODE( emcStatus->task.mode ),
-//                emcStatus->motion.joint[0].homed,
-//                emcStatus->motion.joint[1].homed,
-//                emcStatus->motion.joint[2].homed,
-//                emcStatus->motion.joint[3].homed,
-                emcStatus->task.g5x_offset.tran.x,
-                emcStatus->task.g5x_offset.tran.y,
-                emcStatus->task.g5x_offset.tran.z,
-                emcStatus->task.g5x_offset.a,
-                emcStatus->task.g92_offset.tran.x,
-                emcStatus->task.g92_offset.tran.y,
-                emcStatus->task.g92_offset.tran.z,
-                emcStatus->task.g92_offset.a,
-                emcStatus->motion.traj.position.tran.x,
-                emcStatus->motion.traj.position.tran.y,
-                emcStatus->motion.traj.position.tran.z,
-                emcStatus->motion.traj.position.a,
-                emcStatus->motion.traj.actualPosition.tran.x,
-                emcStatus->motion.traj.actualPosition.tran.y,
-                emcStatus->motion.traj.actualPosition.tran.z,
-                emcStatus->motion.traj.actualPosition.a,
-                wsx,
-                wsy,
-                wsz,
-                wsa,
-                emcStatus->task.file
-        );
+        printf( statusFormat.c_str() );
     }
     else
         printf("updateStatus failed\n");
@@ -399,21 +414,19 @@ void replyStatus( connectionRecType* context ) {
 
     showStatus(); // on server output as well
 
-    float wsx = emcStatus->motion.traj.actualPosition.tran.x - emcStatus->task.g5x_offset.tran.x - emcStatus->task.g92_offset.tran.x;
-    float wsy = emcStatus->motion.traj.actualPosition.tran.y - emcStatus->task.g5x_offset.tran.y - emcStatus->task.g92_offset.tran.y;
-    float wsz = emcStatus->motion.traj.actualPosition.tran.z - emcStatus->task.g5x_offset.tran.z - emcStatus->task.g92_offset.tran.z;
-    float wsa = emcStatus->motion.traj.actualPosition.a - emcStatus->task.g5x_offset.a - emcStatus->task.g92_offset.a;
-
     std::string homeFormat = "homed:";
     for (int i = 0; i < numJoints; i++) {
         homeFormat += " " + std::to_string(emcStatus->motion.joint[i].homed);
     }
 
+    std::string wsFormat = getWorkspacePosString();
+
     char s[256];
-    sprintf(s, "%s %s (%s) %f %f %f %f\n",
+    sprintf(s, "%s %s (%s) (pos:%s)\n",
            getString_EMC_TASK_STATE_short( emcStatus->task.state ),
            getString_EMC_TASK_MODE_short( emcStatus->task.mode ),
            homeFormat.c_str(),
+           wsFormat.c_str()
 //           emcStatus->motion.joint[0].homed,
 //           emcStatus->motion.joint[1].homed,
 //           emcStatus->motion.joint[2].homed,
@@ -422,10 +435,10 @@ void replyStatus( connectionRecType* context ) {
 //           emcStatus->motion.traj.position.tran.y,
 //           emcStatus->motion.traj.position.tran.z,
 //           emcStatus->motion.traj.position.a
-            wsx,
-            wsy,
-            wsz,
-            wsa
+//            wsx,
+//            wsy,
+//            wsz,
+//            wsa
     );
     write(context->cliSock, s, strlen(s));
 }
@@ -436,21 +449,18 @@ void replyPosition( connectionRecType* context ) {
 
     updateStatus();
 
-    float wsx = emcStatus->motion.traj.actualPosition.tran.x - emcStatus->task.g5x_offset.tran.x - emcStatus->task.g92_offset.tran.x;
-    float wsy = emcStatus->motion.traj.actualPosition.tran.y - emcStatus->task.g5x_offset.tran.y - emcStatus->task.g92_offset.tran.y;
-    float wsz = emcStatus->motion.traj.actualPosition.tran.z - emcStatus->task.g5x_offset.tran.z - emcStatus->task.g92_offset.tran.z;
-    float wsa = emcStatus->motion.traj.actualPosition.a - emcStatus->task.g5x_offset.a - emcStatus->task.g92_offset.a;
+    std::string wsFormat = getWorkspacePosString(true);
 
     char s[256];
-    sprintf(s, "ok X:%f Y:%f Z:%f A:%f\n",
+    sprintf(s, "ok%s\n", wsFormat.c_str()
 //           emcStatus->motion.traj.position.tran.x,
 //           emcStatus->motion.traj.position.tran.y,
 //           emcStatus->motion.traj.position.tran.z,
 //           emcStatus->motion.traj.position.a
-            wsx,
-            wsy,
-            wsz,
-            wsa
+//            wsx,
+//            wsy,
+//            wsz,
+//            wsa
     );
     write(context->cliSock, s, strlen(s));
 }
