@@ -1,0 +1,231 @@
+#!/bin/bash
+
+################################################################################
+# 0. Values that come from configure
+################################################################################
+prefix=/usr
+exec_prefix=${prefix}
+
+PIDOF="/usr/bin/pidof -x"
+PS=/usr/bin/ps
+AWK=/usr/bin/awk
+GREP=/usr/bin/grep
+IPCS=/usr/bin/ipcs
+KILL=/usr/bin/kill
+
+LINUXCNC_HOME=/usr; export LINUXCNC_HOME
+
+LINUXCNC_BIN_DIR=/usr/bin
+LINUXCNC_TCL_DIR=/usr/lib/tcltk/linuxcnc
+LINUXCNC_HELP_DIR=/usr/share/doc/linuxcnc
+LINUXCNC_RTLIB_DIR=/usr/lib/linuxcnc/modules
+LINUXCNC_CONFIG_PATH="~/linuxcnc/configs:/usr/local/etc/linuxcnc/configs:/usr/share/doc/linuxcnc/examples/sample-configs"
+LINUXCNC_NCFILES_DIR=/usr/share/linuxcnc/ncfiles
+LINUXCNC_LANG_DIR=/usr/lib/tcltk/linuxcnc/msgs
+REALTIME=/etc/init.d/realtime
+LINUXCNC_IMAGEDIR=/usr/share/linuxcnc
+LINUXCNC_TCL_LIB_DIR=/usr/lib/tcltk/linuxcnc
+HALLIB_DIR=/usr/share/linuxcnc/hallib; export HALLIB_DIR
+HALLIB_PATH=.:$HALLIB_DIR; export HALLIB_PATH
+
+# put ~.local/bin in PATH if missing. See:
+# https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=839155
+if [ -d $HOME/.local/bin ]; then
+    if [[ "$PATH" != *".local/bin"* ]]; then
+        PATH=$HOME/.local/bin:$PATH
+    fi
+fi
+
+HALCMD="halcmd"
+
+
+DEBUG_FILE=$(mktemp /tmp/linuxcnc.debug.XXXXXX)
+PRINT_FILE=$(mktemp /tmp/linuxcnc.print.XXXXXX)
+
+# Usage:
+#  GetFromIniEx VAR1 SEC1 [VAR2 SEC2...VARn SECn] [default]
+function GetFromIniEx {
+    original_var="[$2]$1"
+    while [ $# -ge 2 ]; do
+	if retval=`$INIVAR -ini "$INIFILE" -var "$1" -sec "$2" 2>/dev/null`; then return; fi
+	shift 2
+    done
+    if [ $# -eq 0 ]; then
+	echo "Can't find $original_var in $INIFILE."
+	exit -1
+    fi
+    retval="$1"
+}
+
+# 2.9. get NML config information
+GetFromIniEx NML_FILE LINUXCNC NML_FILE EMC /usr/share/linuxcnc/linuxcnc.nml
+NMLFILE=$retval
+export NMLFILE
+
+program_available () {
+    type -path "$1" > /dev/null 2>&1
+}
+
+
+    INIFILE=$($INIVAR -ini ~/.linuxcncrc -var LAST_CONFIG -sec PICKCONFIG 2>>$DEBUG_FILE)
+    #echo "Using previous inifile: $INIFILE" 
+
+
+################################################################################
+# 3. Done gathering information, define a few functions
+# Execution resumes after function definitions...
+################################################################################
+
+KILL_TASK=
+KILL_TIMEOUT=20
+
+################################################################################
+# 3.1. Kills a list of tasks with timeout
+# if it doesn't work, kill -9 is used
+################################################################################
+function KillTaskWithTimeout() {
+    if [ ! -n "$KILL_PIDS" ] ; then
+	KILL_PIDS=`$PIDOF $KILL_TASK`
+    fi
+    if [ ! -n "$KILL_PIDS" ] ; then
+	echo "Could not find pid(s) for task $KILL_TASK"
+	return -1
+    fi
+    local NPROCS
+    for KILL_PID in $KILL_PIDS ; do
+        if $PS -o comm= $KILL_PID | $GREP -q '<defunct>'; then
+            echo "Skipping defunct task $KILL_TASK, PID=$KILL_PID" >>$PRINT_FILE
+            continue
+        fi
+	# first a "gentle" kill with signal TERM
+	$KILL $KILL_PID
+	WAIT=$KILL_TIMEOUT
+	# wait and see if it dissappears
+	while [ $WAIT -gt 1 ] ; do
+	    # see if it's still alive
+            NPROCS=$($PS -o comm= $KILL_PID | $GREP -v '<defunct>' | wc -l)
+            if [ $NPROCS -gt 0 ]; then
+		WAIT=$(($WAIT-1))
+		sleep .1
+	    else
+		WAIT=0
+	    fi
+	done
+	if [ $WAIT -gt 0 ] ; then
+	    # gentle didn't work, get serious
+	    echo "Timeout, trying kill -9" >>$PRINT_FILE
+	    $KILL -9 $KILL_PID
+	    WAIT=$KILL_TIMEOUT
+	    # wait and see if it dissappears
+	    while [ $WAIT -gt 1 ] ; do
+		# see if it's still alive
+                NPROCS=$($PS -o comm= $KILL_PID | $GREP -v '<defunct>' | wc -l)
+                if [ $NPROCS -gt 0 ]; then
+		    WAIT=$(($WAIT-1))
+		    sleep .1
+		else
+		    WAIT=0
+		fi
+	    done
+	fi
+	if [ $WAIT -gt 0 ] ; then
+	    echo "Could not kill task $KILL_TASK, PID=$KILL_PID"
+	fi
+    done
+    KILL_PIDS=
+    KILL_TASK=
+}
+
+
+################################################################################
+# 3.2. define the cleanup function
+#
+# this cleanup function doesn't know or care what was actually
+# loaded - it simply kills _any_ processes in its list of
+# components
+################################################################################
+function Cleanup() {
+
+    echo "Shutting down and cleaning up LinuxCNC..."
+    # Kill displays first - that should cause an orderly
+    #   shutdown of the rest of linuxcnc
+    for KILL_TASK in linuxcncpanel iosh linuxcncsh linuxcncrsh linuxcnctop mdi debuglevel gmoccapy gscreen; do
+	if $PIDOF $KILL_TASK >>$DEBUG_FILE ; then
+	    KillTaskWithTimeout
+	fi
+    done
+
+    if program_available axis-remote ; then
+	if [ ! -z "$DISPLAY" ]; then
+	    axis-remote --ping && axis-remote --quit
+	fi
+    fi
+
+    if [ "$1" = "other" ]; then
+        echo -n "Waiting for other session to finish exiting..."
+	WAIT=$KILL_TIMEOUT
+	while [ $WAIT -gt 1 ]; do
+            if ! [ -f $LOCKFILE ]; then
+                echo " Ok"
+                return 0
+            fi
+            WAIT=$(($WAIT-1))
+            sleep .1
+        done
+        echo "lockfile still not removed"
+    fi
+
+    SHUTDOWN=`$INIVAR -ini "$INIFILE" -var SHUTDOWN -sec HAL 2> /dev/null`
+    if [ -n "$SHUTDOWN" ]; then
+	echo "Running HAL shutdown script"
+	$HALCMD -f $SHUTDOWN
+    fi
+
+    # now kill all the other user space components
+    for KILL_TASK in linuxcncsvr milltask; do
+	if $PIDOF $KILL_TASK >>$DEBUG_FILE ; then
+	    KillTaskWithTimeout
+	fi
+    done
+
+    echo "Stopping realtime threads" >> $DEBUG_FILE
+    $HALCMD stop
+    echo "Unloading hal components" >> $DEBUG_FILE
+    $HALCMD unload all
+
+    for i in `seq 10`; do
+        # (the one component is the halcmd itself)
+        if [ `$HALCMD list comp | wc -w` = 1 ]; then break; fi
+        sleep .2
+    done
+
+    echo "Removing HAL_LIB, RTAPI, and Real Time OS modules" >>$PRINT_FILE
+    $REALTIME stop
+
+    echo "Removing NML shared memory segments" >> $PRINT_FILE
+    while read b x t x x x x x x m x; do
+        case $b$t in
+            BSHMEM) ipcrm -M $m 2>/dev/null;;
+        esac
+    done < $NMLFILE
+
+
+    # remove lock file
+    if [ -f $LOCKFILE ] ; then
+	rm $LOCKFILE
+    fi
+}
+
+
+
+################################################################################
+# 4. done with function definitions, execution resumes here
+################################################################################
+
+# Name of lock file to check for that signifies that LinuxCNC is up,
+# to prevent multiple copies of controller
+LOCKFILE=/tmp/linuxcnc.lock
+
+Cleanup
+
+

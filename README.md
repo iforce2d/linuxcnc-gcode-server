@@ -120,6 +120,8 @@ You can see a video demonstrating basic usage here. Note that this video was mad
 
 [![Watch the video](https://img.youtube.com/vi/ib_G0eyn5FM/hqdefault.jpg)](https://www.youtube.com/embed/ib_G0eyn5FM)
 
+See the 'headless' subfolder of this repository for the startup/shutdown scripts used in the video.
+
 <br>
 
 ## Usage with OpenPNP
