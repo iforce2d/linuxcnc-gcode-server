@@ -114,6 +114,14 @@ This is only necessary if you want to use the subroutines explained in the secti
 
 <br>
 
+## Video demo
+
+You can see a video demonstrating basic usage here. Note that this video was made before some of the options mentioned above existed. For best results please specify your machine .ini file with the -i option when starting the server to know basic but important info like how many axes there are :)
+
+[![Watch the video](https://img.youtube.com/vi/ib_G0eyn5FM/hqdefault.jpg)](https://www.youtube.com/embed/ib_G0eyn5FM)
+
+<br>
+
 ## Usage with OpenPNP
 
 Set up a GCodeDriver like this:
