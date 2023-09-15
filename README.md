@@ -43,7 +43,7 @@ See the section below about blending.
 
 ## LinuxCNC operator commands
 
-Currently some of these might only work for a 4 axis setup.
+In addition to plain g-code, you can use the commands below to carry out some common operator actions. Note that some of these will be ignored if LinuxCNC is currently running a program.
 
 #### status
 Returns information about estop/machine status, task mode, axis homed, and work position, eg.:
@@ -59,11 +59,11 @@ Same as clicking "home all" in Axis GUI. Already homed axes will be ignored. The
 #### abort
 Same as hitting ESC or the stop button in Axis GUI.
 #### manual
-Attempts to enter manual mode.
+Attempts to enter manual mode, which is necessary for manual jogging of axes.
 #### mdi
-Attempts to enter MDI mode.
+Attempts to enter MDI mode. (MDI mode will automatically be entered when giving g-code commands.)
 #### open &lt;filename&gt;
-Attempts to open the given gcode file.
+Attempts to open the given gcode file. You must specify the full path for the file.
 #### run
 Same as clicking the run button in Axis GUI.
 #### pause
@@ -109,7 +109,7 @@ You can optionally specify the .ini file of your machine with the -i parameter, 
 
     ./linuxcnc-gcode-server -i /path/to/your/machine.ini
 
-This is only necessary if you want to use the subroutines explained in the section below about blending.
+If you want to home the machine via this server then this parameter is not really optional because reading the .ini file is how the server obtains some basic information like how many axes your machine has. But if the machine is already homed, you can still use the server to run g-code and most other actions without giving the .ini file parameter.
 
 
 <br>
