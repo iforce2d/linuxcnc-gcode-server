@@ -39,6 +39,7 @@ extern char operator_display_string[NML_DISPLAY_LEN];
 extern char emc_inifile[LINELEN];
 extern char emc_nmlfile[LINELEN];
 extern char emc_macrosPath[LINELEN];
+extern char emc_openFile[LINELEN];
 
 int iniLoad(const char *filename);
 int emcTaskNmlGet();

@@ -708,16 +708,9 @@ void doShowFile(connectionRecType* context) {
 
 }
 
-void doOpenProgram(connectionRecType* context, char* inStr) {
+void doOpenFile(connectionRecType* context, char* filenameStr) {
 
-    printf( "Doing load file: %s\n", inStr );
-
-    char* filenameStr = strtok(inStr, delims); // remove "open"
-    if ( filenameStr != NULL ) {
-        filenameStr = strtok(NULL, delims);
-    }
-
-    printf( "  Filename: %s\n", filenameStr );
+    printf( "doOpenFile: %s\n", filenameStr );
 
     int ok = 0;
 
@@ -739,6 +732,17 @@ void doOpenProgram(connectionRecType* context, char* inStr) {
         showError(context);
     else
         replyOk(context);
+}
+
+void doOpenCommand(connectionRecType* context, char* inStr) {
+    printf( "doOpenCommand: %s\n", inStr );
+
+    char* filenameStr = strtok(inStr, delims); // remove "open"
+    if ( filenameStr != NULL ) {
+        filenameStr = strtok(NULL, delims);
+    }
+
+    doOpenFile( context, filenameStr );
 }
 
 void doRunProgram(connectionRecType* context) {
@@ -979,7 +983,7 @@ int parseCommand(connectionRecType *context)
                     estopOffAndMachineOn(context);
                     break;
                 case cmdOpenProgram:
-                    doOpenProgram(context, originalInBuf);
+                    doOpenCommand(context, originalInBuf);
                     break;
                 case cmdShowFile:
                     doShowFile(context);
@@ -1280,6 +1284,10 @@ printf("LINELEN= %d\n", LINELEN);
     printf("Using nml file        : %s\n", emc_nmlfile);
     printf("Using subroutine path : %s\n", emc_macrosPath);
 
+    if ( strlen(emc_openFile) > 0 ) {
+        printf("Using start file : %s\n", emc_openFile);
+    }
+
     subRoutineFile = std::string(emc_macrosPath) + "/tmp.ngc";
 
     if (pthread_mutex_init(&batchEntriesLock, NULL) != 0) {
@@ -1309,6 +1317,13 @@ printf("LINELEN= %d\n", LINELEN);
 
     if ( enableMachineOnStartup )
         enableMachine();
+
+    if ( strlen(emc_openFile) > 0 ) {
+        doOpenFile(NULL, emc_openFile);
+    }
+
+    sendManual();
+
     showStatus();
 
     // attach our quit function to SIGINT

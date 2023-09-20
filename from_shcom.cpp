@@ -38,10 +38,12 @@ int programStartLine = 0;
 //const char *nmlfile = "/usr/share/linuxcnc/linuxcnc.nml";
 
 char emc_macrosPath[LINELEN];
+char emc_openFile[LINELEN];
 
 int iniLoad(const char *filename)
 {
     strncpy(emc_macrosPath, ".", LINELEN);
+    strncpy(emc_openFile, "", LINELEN);
 
     IniFile inifile;
     const char *tmpstring;
@@ -74,6 +76,13 @@ int iniLoad(const char *filename)
     if (NULL != (tmpstring = inifile.Find("SUBROUTINE_PATH", "RS274NGC"))) {
         // copy to global
         strncpy(emc_macrosPath, tmpstring, LINELEN);
+    } else {
+        // not found, use default
+    }
+
+    if (NULL != (tmpstring = inifile.Find("OPEN_FILE", "DISPLAY"))) {
+        // copy to global
+        strncpy(emc_openFile, tmpstring, LINELEN);
     } else {
         // not found, use default
     }
