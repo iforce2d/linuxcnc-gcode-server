@@ -617,6 +617,14 @@ bool estopOffAndMachineOn(connectionRecType *context) {
         }
     }
 
+    updateStatus();
+    if ( emcStatus->task.state != EMC_TASK_STATE_ON ) {
+        printf("enable failed!\n");
+        sprintf( error_string, "enable failed!" );
+        showError(context);
+        return false;
+    }
+
     printf("ok\n");
     replyOk(context);
 
